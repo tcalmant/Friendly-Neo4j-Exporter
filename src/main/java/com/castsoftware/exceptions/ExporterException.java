@@ -1,4 +1,4 @@
-package exceptions;
+package com.castsoftware.exceptions;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;

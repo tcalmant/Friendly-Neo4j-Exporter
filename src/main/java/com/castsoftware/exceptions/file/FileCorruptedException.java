@@ -15,9 +15,9 @@
  *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package exceptions.file;
+package com.castsoftware.exceptions.file;
 
-import exceptions.ExporterException;
+import com.castsoftware.exceptions.ExporterException;
 
 /**
  * The <code>FileNotFound</code> is thrown when the procedure can't read a file because of corrupted file or bad format.

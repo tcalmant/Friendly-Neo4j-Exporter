@@ -15,12 +15,11 @@
  *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package exporter;
+package com.castsoftware.exporter;
 
-import exceptions.ExporterException;
-import exceptions.ProcedureException;
-import exceptions.file.FileCorruptedException;
-import results.OutputMessage;
+import com.castsoftware.exceptions.ProcedureException;
+import com.castsoftware.exceptions.file.FileCorruptedException;
+import com.castsoftware.results.OutputMessage;
 import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
 import org.neo4j.procedure.*;
@@ -144,7 +143,7 @@ public class Loader {
     /**
      * Create a Node based on provided header and values.
      * If a value is empty, it will not be added as a property to the node.
-     * To make the exporter more generic, the conversion from CSV values to Java Values does not necessitate POJOs object.
+     * To make the com.castsoftware.exporter more generic, the conversion from CSV values to Java Values does not necessitate POJOs object.
      * However, the drawback is that this conversion can create some errors. @see Loader.getNeo4jType() for more information.
      * @param label Label that will be give to the node
      * @param headers Headers as a list of String
@@ -330,7 +329,7 @@ public class Loader {
      */
     @Description("hfexporter.load(PathToZipFileName) - Import a configuration zip file to neo4j. \n" +
             "Parameters : \n" +
-            "               - @PathToZipFileName - <String> - Location to save output results. Ex : \"C:\\User\\John\\config.zip\"" +
+            "               - @PathToZipFileName - <String> - Location to save output com.castsoftware.results. Ex : \"C:\\User\\John\\config.zip\"" +
             "Example of use : CALL hfexporter.load(\"C:\\Neo4j_exports\\config.zip\")" +
             "")
     @Procedure(value = "hfexporter.load", mode = Mode.WRITE)

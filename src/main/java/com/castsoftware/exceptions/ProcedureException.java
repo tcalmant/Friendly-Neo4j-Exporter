@@ -1,4 +1,4 @@
-package exceptions;
+package com.castsoftware.exceptions;
 
 import org.neo4j.logging.Log;
 

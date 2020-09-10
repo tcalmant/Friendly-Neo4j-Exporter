@@ -15,27 +15,24 @@
  *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package exceptions.neo4j;
+package com.castsoftware.exceptions.neo4j;
 
-import exceptions.ExporterException;
-
+import com.castsoftware.exceptions.ExporterException;
 
 /**
- * The <code>Neo4jConnectionError</code> is thrown when the connection between the procedure and the database fail.
- * Neo4jConnectionError
+ * The <code>Neo4jRuntimeException</code> is thrown when the Neo4j API fails.
+ * Neo4jRuntimeException
  */
-public class Neo4jConnectionError extends ExporterException {
+public class Neo4jRuntimeException extends ExporterException {
+    private static final long serialVersionUID = -257426373544618244L;
+    private static final String messagePrefix = "Error returned by Neo4j API : ";
+    private static final String codePrefix = "NEO_RT_";
 
-    private static final long serialVersionUID = 7522702117300762310L;
-    private static final String messagePrefix = "Error, the connection with neo4j failed : ";
-    private static final String codePrefix = "NEO_CE_";
-
-    public Neo4jConnectionError(String message, Throwable cause, String code) {
+    public Neo4jRuntimeException(String message, Throwable cause, String code) {
         super(messagePrefix.concat(message), cause, codePrefix.concat(code));
     }
 
-    public Neo4jConnectionError(String message, String code) {
+    public Neo4jRuntimeException(String message, String code) {
         super(messagePrefix.concat(message), codePrefix.concat(code));
     }
-
 }

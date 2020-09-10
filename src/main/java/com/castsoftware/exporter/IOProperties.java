@@ -15,11 +15,11 @@
  *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package exporter;
+package com.castsoftware.exporter;
 
-import exceptions.ExporterException;
-import exceptions.file.FileCorruptedException;
-import exceptions.file.FileIOException;
+import com.castsoftware.exceptions.ExporterException;
+import com.castsoftware.exceptions.file.FileCorruptedException;
+import com.castsoftware.exceptions.file.FileIOException;
 
 import java.io.IOException;
 import java.util.Properties;

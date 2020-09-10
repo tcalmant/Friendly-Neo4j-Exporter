@@ -15,18 +15,18 @@
  *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package exceptions.neo4j;
+package com.castsoftware.exceptions.neo4j;
 
-import exceptions.ExporterException;
+import com.castsoftware.exceptions.ExporterException;
 
 /**
- * The <code>Neo4jNoResult</code> is thrown when a request doesn't return expected results or if results are empty.
+ * The <code>Neo4jNoResult</code> is thrown when a request doesn't return expected com.castsoftware.results or if com.castsoftware.results are empty.
  * Neo4jNoResult
  */
 public class Neo4jNoResult extends ExporterException {
 
     private static final long serialVersionUID = 8218353918930322258L;
-    private static final String messagePrefix = "Error, the query returned no results : ";
+    private static final String messagePrefix = "Error, the query returned no com.castsoftware.results : ";
     private static final String codePrefix = "NEO_NR_";
 
     public Neo4jNoResult(String message, Throwable cause, String code) {

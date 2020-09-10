@@ -5,10 +5,10 @@
     <modelVersion>4.0.0</modelVersion>
     <packaging>jar</packaging>
 
-    <name>Human friendly Neo4J exporter</name>
-    <description>Neo4j extension providing a better CSV export than the original exporter.</description>
+    <name>Friendly Neo4J com.castsoftware.exporter</name>
+    <description>Neo4j extension providing a better CSV export than the original com.castsoftware.exporter.</description>
     <groupId>github.makunda</groupId>
-    <artifactId>humanFriendly-Neo4j-Exporter</artifactId>
+    <artifactId>friendly-Neo4j-Exporter</artifactId>
     <version>1.0-ALPHA</version>
 
     <properties>

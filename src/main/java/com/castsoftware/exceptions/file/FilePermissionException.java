@@ -15,9 +15,9 @@
  *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package exceptions.file;
+package com.castsoftware.exceptions.file;
 
-import exceptions.ExporterException;
+import com.castsoftware.exceptions.ExporterException;
 
 /**
  * The <code>FilePermissionError</code> is thrown when the procedure can't access a file because it doesn't have the require permissions.

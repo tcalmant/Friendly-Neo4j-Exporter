@@ -15,25 +15,21 @@
  *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package exceptions.neo4j;
+package com.castsoftware.exceptions.neo4j;
 
-import exceptions.ExporterException;
+import com.castsoftware.exceptions.ExporterException;
 
-/**
- * The <code>Neo4jBadRequest</code> is thrown when the Neo4j request fails.
- * The failed request can be found in logs.
- * Neo4jBadRequest
- */
-public class Neo4jBadRequest extends ExporterException {
-    private static final long serialVersionUID = -4369489315467963030L;
-    private static final String messagePrefix = "Error during Neo4j request : ";
+public class Neo4jQueryException extends ExporterException {
+
+    private static final long serialVersionUID = 8087192855448474860L;
+    private static final String messagePrefix = "Error during Neo4j query : ";
     private static final String codePrefix = "NEO_BR_";
 
-    public Neo4jBadRequest(String request, Throwable cause, String code) {
+    public Neo4jQueryException(String request, Throwable cause, String code) {
         super(messagePrefix.concat(request), cause, codePrefix.concat(code));
     }
 
-    public Neo4jBadRequest(String request, String query, Throwable cause, String code) {
+    public Neo4jQueryException(String request, String query, Throwable cause, String code) {
         super(messagePrefix.concat(request).concat(" . Query : ").concat(query), cause, codePrefix.concat(code));
     }
 }

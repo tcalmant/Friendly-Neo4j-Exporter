@@ -15,20 +15,19 @@
  *     along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-package exporter;
+package com.castsoftware.exporter;
 
-import exceptions.ProcedureException;
-import exceptions.file.FileIOException;
-import exceptions.neo4j.Neo4jNoResult;
+import com.castsoftware.exceptions.ProcedureException;
+import com.castsoftware.exceptions.file.FileIOException;
+import com.castsoftware.exceptions.neo4j.Neo4jNoResult;
 
-import results.OutputMessage;
+import com.castsoftware.results.OutputMessage;
 
 import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
 import org.neo4j.procedure.*;
 
 import java.io.*;
-import java.rmi.server.ExportException;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -322,7 +321,7 @@ public class Saver {
     @Description("hfexporter.save(LabelsToSave, Path, ZipFileName, SaveRelationship, ConsiderNeighbors) - Save labels to CSV file format. \n" +
             "Parameters : \n" +
             "               - @LabelsToSave- <String List> - Labels to save, as a list of string. Ex : [\"C_relationship\", \"F_FrameworkRule\"] " +
-            "               - @Path - <String> - Location to save output results. Ex : \"C:\\User\\John\"" +
+            "               - @Path - <String> - Location to save output com.castsoftware.results. Ex : \"C:\\User\\John\"" +
             "               - @ZipFileName - <String> - Name of the final zip file (the extension .zip will be automatically added). Ex : \"Result_05_09\" " +
             "               - @SaveRelationship - <Boolean> - Save relationships associated to the labels selected. If the option @ConsiderNeighbors is active, relationships involving neighbors' label will also be saved in the process" +
             "               - @ConsiderNeighbors - <Boolean> - Consider the neighbors of selected labels. If a node in the provided label list has a relationship with another node from a different label, this label will also be saved. " +

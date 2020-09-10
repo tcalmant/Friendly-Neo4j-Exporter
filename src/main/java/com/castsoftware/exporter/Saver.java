@@ -170,7 +170,6 @@ public class Saver {
     /**
      * Explore neighborhood of specified node and extract potentials neighbors' label.
      * New labels will be added to the open list
-     *
      * @param n Node to study
      */
     private void handleNeighbors(Node n) {
@@ -315,20 +314,20 @@ public class Saver {
 
 
     /**
-     * Neo4 Procedure entry point for "hfexporter.save()". See Neo4j documentation for more information.
+     * Neo4 Procedure entry point for "fexporter.save()". See Neo4j documentation for more information.
      * @throws ProcedureException
      */
-    @Description("hfexporter.save(LabelsToSave, Path, ZipFileName, SaveRelationship, ConsiderNeighbors) - Save labels to CSV file format. \n" +
+    @Description("fexporter.save(LabelsToSave, Path, ZipFileName, SaveRelationship, ConsiderNeighbors) - Save labels to CSV file format. \n" +
             "Parameters : \n" +
             "               - @LabelsToSave- <String List> - Labels to save, as a list of string. Ex : [\"C_relationship\", \"F_FrameworkRule\"] " +
-            "               - @Path - <String> - Location to save output com.castsoftware.results. Ex : \"C:\\User\\John\"" +
+            "               - @Path - <String> - Location to save output results. Ex : \"C:\\User\\John\"" +
             "               - @ZipFileName - <String> - Name of the final zip file (the extension .zip will be automatically added). Ex : \"Result_05_09\" " +
             "               - @SaveRelationship - <Boolean> - Save relationships associated to the labels selected. If the option @ConsiderNeighbors is active, relationships involving neighbors' label will also be saved in the process" +
             "               - @ConsiderNeighbors - <Boolean> - Consider the neighbors of selected labels. If a node in the provided label list has a relationship with another node from a different label, this label will also be saved. " +
             "                                                  This option does not necessitate the activation of @SaveRelationship to work, but it is strongly recommended to keep the report consistent." +
-            "Example of use : CALL hfexporter.save([\"C_relationship\", \"F_FrameworkRule\"], \"C:/Neo4j_exports/\", \"MyReport\", true, true )" +
+            "Example of use : CALL fexporter.save([\"C_relationship\", \"F_FrameworkRule\"], \"C:/Neo4j_exports/\", \"MyReport\", true, true )" +
             "")
-    @Procedure(value = "hfexporter.save", mode = Mode.WRITE)
+    @Procedure(value = "fexporter.save", mode = Mode.WRITE)
     public Stream<OutputMessage> save(@Name(value = "LabelsToSave") List<String> labelList,
                                       @Name(value = "Path") String path,
                                       @Name(value = "ZipFileName",defaultValue="export") String zipFileName,

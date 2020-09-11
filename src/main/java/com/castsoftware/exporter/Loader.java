@@ -327,7 +327,7 @@ public class Loader {
      */
     @Description("fexporter.load(PathToZipFileName) - Import a configuration zip file to neo4j. \n" +
             "Parameters : \n" +
-            "               - @PathToZipFileName - <String> - Location to save output results. Ex : \"C:\\User\\John\\config.zip\"" +
+            "               - @PathToZipFileName - <String> - Location to saved output results. Ex : \"C:\\User\\John\\config.zip\"" +
             "Example of use : CALL fexporter.load(\"C:\\Neo4j_exports\\config.zip\")" +
             "")
     @Procedure(value = "fexporter.load", mode = Mode.WRITE)

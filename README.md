@@ -1,24 +1,24 @@
 # Friendly Exporter for Neo4j
-### Neo4j extension providing a better CSV export than the integrated CSV exporter inside Neo4J
+### Neo4j extension offering a better CSV export than the CSV exporter integrated in Neo4J
 
 ![Folder structure with exporter](folder_structure.png)
 
-Extension to offer a better CSV export, with one file per label and relationship. 
-Making it easier and more understable to edit with a csv editor the output.
+Extension to offer a better CSV export, with one file per label relationship. 
+Make it easier and more understandable to edit the output with a csv editor.
 
 ## Installation
 
-To use the Friendly exporter you have two options:
+To install the Friendly exporter, you have two options:
 
-    - First, build the Java project with Maven. Neo4j needs Java 8 to work correctly, so make sure you have the correct JDK version.
-    Once the build is done, you should see a .jar package named 'friendly-neo4j-exporter-%VERSION%*.jar' in the target repository.
-    Drag & drop this file into the Neo4j plugin folder ( By default this folder is located at %NEO4J INSTALLATION FOLDER%\neo4j\plugins )
+    - First, build the Java project with Maven. Neo4j needs Java 8 to work properly, so make sure you have the correct JDK version.
+    Once the build is complete, you should see a .jar package named 'friendly-neo4j-exporter-%VERSION%*.jar' in the target repository.
+    Drag & drop this file in the Neo4j plugin folder ( By default this folder is located in %NEO4J INSTALLATION FOLDER%\neo4j\plugins )
 
-    -Download the latest packaged extension [here](https://github.com/Makunda/Friendly-Neo4j-Exporter/releases), and drop this file into your Neo4j plugin folder.
+    -Download the latest packaged extension [here](https://github.com/Makunda/Friendly-Neo4j-Exporter/releases), and drop this file in your Neo4j plugin folder.
 
-After this operation, you'll have to restart your Neo4J instance. If you're trying to replace an existing plugin file, you'll have to stop the instance first.
+After this operation, you'll have to restart your Neo4J instance. If you try to replace an existing plugin file, you'll have to stop the instance first.
 
-:warning: Don't forget to allow this extension in your Neo4j configuration file. For more information see the [official documentation](https://neo4j.com/docs/operations-manual/4.1/security/securing-extensions/)
+:warning: Don't forget to allow this extension in your Neo4j configuration file. For more information, please refer to the [official documentation](https://neo4j.com/docs/operations-manual/4.1/security/securing-extensions/)
 
 ## Usage
 

@@ -35,11 +35,11 @@ CALL fexporter.save(["C_relationship", "F_FrameworkRule"], "C:/Neo4j_exports/", 
 
 #### With parameters :
 
-- **@LabelsToSave** - *<String List>* - Labels to save, as a list of string. Ex : ["C_relationship", "F_FrameworkRule"]
-- **@Path** - *<String>* - Location to save output results. Ex : "C:/User/John/Documents/"
-- **@ZipFileName** - *<String>* - Name of the final zip file (the extension .zip will be automatically added). Ex : "Result_05_09_20" 
-- **@SaveRelationship** - *<Boolean> Optional* - Save relationships associated to the labels selected. If the option @ConsiderNeighbors is active, relationships involving neighbors' label will also be saved in the process
-- **@ConsiderNeighbors** - *<Boolean> Optional* - Consider the neighbors of selected labels. If a node in the provided label list has a relationship with another node from a different label, this label will also be saved.This option does not necessitate the activation of @SaveRelationship to work, but it is strongly recommended to keep the report consistent.
+- **@LabelsToSave** - *String List* - Labels to save, as a list of string. Ex : ["C_relationship", "F_FrameworkRule"]
+- **@Path** - *String* - Location to save output results. Ex : "C:/User/John/Documents/"
+- **@ZipFileName** - *String* - Name of the final zip file (the extension .zip will be automatically added). Ex : "Result_05_09_20" 
+- **@SaveRelationship** - *Boolean Optional* - Save relationships associated to the labels selected. If the option @ConsiderNeighbors is active, relationships involving neighbors' label will also be saved in the process
+- **@ConsiderNeighbors** - *Boolean Optional* - Consider the neighbors of selected labels. If a node in the provided label list has a relationship with another node from a different label, this label will also be saved.This option does not necessitate the activation of @SaveRelationship to work, but it is strongly recommended to keep the report consistent.
 
 You can now explore the content of the zip, extract it, and zip it back for re-import.
 Each node/relationship saved will have its own associated file.
@@ -58,7 +58,7 @@ CALL fexporter.load("C:/Neo4j_exports/config.zip")
 ```
 
 #### With parameters : 
-- **@PathToZipFileName** - *<String>* - Location to saved output results (in zip format). Ex : "C:/Neo4j_exports/Result_05_09_20.zip"
+- **@PathToZipFileName** - *String* - Location to saved output results (in zip format). Ex : "C:/Neo4j_exports/Result_05_09_20.zip"
 
 This way your data will be re-import back into Neo4j.
 

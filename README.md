@@ -10,11 +10,9 @@ Make it easier and more understandable to edit the output with a csv editor.
 
 To install the Friendly exporter, you have two options:
 
-    - First, build the Java project with Maven. Neo4j needs Java 8 to work properly, so make sure you have the correct JDK version.
-    Once the build is complete, you should see a .jar package named 'friendly-neo4j-exporter-%VERSION%*.jar' in the target repository.
-    Drag & drop this file in the Neo4j plugin folder ( By default this folder is located in %NEO4J INSTALLATION FOLDER%\neo4j\plugins )
+- First, build the Java project with Maven. Neo4j needs Java 8 to work properly, so make sure you have the correct JDK version. Once the build is complete, you should see a .jar package named 'friendly-neo4j-exporter-%VERSION%.jar' in the target repository. Drag & drop this file in the Neo4j plugin folder ( By default this folder is located in %NEO4J INSTALLATION FOLDER%\neo4j\plugins )
 
-    -Download the latest packaged extension [here](https://github.com/Makunda/Friendly-Neo4j-Exporter/releases), and drop this file in your Neo4j plugin folder.
+- Download the latest packaged extension [here](https://github.com/Makunda/Friendly-Neo4j-Exporter/releases), and drop this file in your Neo4j plugin folder.
 
 After this operation, you'll have to restart your Neo4J instance. If you try to replace an existing plugin file, you'll have to stop the instance first.
 

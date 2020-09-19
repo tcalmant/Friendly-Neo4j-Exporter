@@ -7,7 +7,7 @@
 
     <name>Friendly Neo4J exporter</name>
     <description>Neo4j extension providing a better CSV export than the original exporter.</description>
-    <groupId>github.makunda</groupId>
+    <groupId>com.castsoftware</groupId>
     <artifactId>friendly-neo4j-exporter</artifactId>
     <version>1.0-ALPHA</version>
 

@@ -20,7 +20,6 @@ import com.castsoftware.exceptions.file.FileCorruptedException;
 import com.castsoftware.results.OutputMessage;
 import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
-import org.neo4j.procedure.*;
 
 import java.io.*;
 import java.time.LocalDate;
@@ -34,7 +33,7 @@ import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
-public class Loader {
+public class Importer {
 
     // Return message queue
     private static final List<OutputMessage> MESSAGE_QUEUE = new ArrayList<>();
@@ -49,20 +48,17 @@ public class Loader {
     private static final String NODE_PREFIX = IOProperties.Property.PREFIX_NODE_FILE.toString();
 
     // Static Members
-    private static Long countLabelCreated;
-    private static Long countRelationTypeCreated;
-    private static Long ignoredFile;
-    private static Long nodeCreated;
-    private static Long relationshipCreated;
+    private Long countLabelCreated;
+    private Long countRelationTypeCreated;
+    private Long ignoredFile;
+    private Long nodeCreated;
+    private Long relationshipCreated;
 
     // Binding map between csv ID and Neo4j created nodes. Only the Node id is stored here, to limit the usage of heap memory.
-    private static Map<Long, Long> idBindingMap;
+    private Map<Long, Long> idBindingMap;
 
-    @Context
-    public GraphDatabaseService db;
-
-    @Context
-    public Log log;
+    private GraphDatabaseService db;
+    private Log log;
 
     /**
      * Convert a String containing a Neo4j Type to a Java Type
@@ -321,28 +317,8 @@ public class Loader {
     }
 
 
-    /**
-     * Neo4 Procedure entry point for "fexporter.load()". See Neo4j documentation for more information.
-     * @throws ProcedureException
-     */
-    @Description("fexporter.load(PathToZipFileName) - Import a configuration zip file to neo4j. \n" +
-            "Parameters : \n" +
-            "               - @PathToZipFileName - <String> - Location to saved output results. Ex : \"C:\\User\\John\\config.zip\"" +
-            "Example of use : CALL fexporter.load(\"C:\\Neo4j_exports\\config.zip\")" +
-            "")
-    @Procedure(value = "fexporter.load", mode = Mode.WRITE)
-    public Stream<OutputMessage> loader(@Name(value = "PathToZipFileName") String pathToZipFileName) throws ProcedureException {
-
+    public Stream<OutputMessage> load(String pathToZipFileName) throws ProcedureException {
         MESSAGE_QUEUE.clear();
-
-        // Init members ( Neo4J decides sometimes to keep the class instantiated )
-        countLabelCreated = 0L;
-        countRelationTypeCreated = 0L;
-        ignoredFile = 0L;
-        nodeCreated = 0L;
-        relationshipCreated = 0L;
-        idBindingMap = new HashMap<>();
-
         File zipFile = new File(pathToZipFileName);
 
         // End the procedure if the path specified isn't valid
@@ -363,5 +339,20 @@ public class Loader {
         MESSAGE_QUEUE.add(new OutputMessage(String.format("%d node(s) and %d relationship(s) were created during the import.", nodeCreated, relationshipCreated)));
 
         return MESSAGE_QUEUE.stream();
+    }
+
+    public Importer(GraphDatabaseService db, Log log) {
+        this.db = db;
+        this.log = log;
+
+        // Init members
+        this.countLabelCreated = 0L;
+        this.countRelationTypeCreated = 0L;
+        this.ignoredFile = 0L;
+        this.nodeCreated = 0L;
+        this.relationshipCreated = 0L;
+        this.idBindingMap = new HashMap<>();
+
+
     }
 }

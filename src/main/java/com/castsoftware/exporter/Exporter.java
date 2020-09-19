@@ -31,36 +31,33 @@ import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-public class Saver {
+public class Exporter {
 
     // Return message queue
     private static final List<OutputMessage> MESSAGE_QUEUE = new ArrayList<>();
 
-    // Default values ( Should be added to a property file )
-    private static final String DELIMITER = IOProperties.Property.CSV_DELIMITER.toString();
-    private static final String EXTENSION = IOProperties.Property.CSV_EXTENSION.toString();
-    private static final String INDEX_COL = IOProperties.Property.INDEX_COL.toString();
-    private static final String INDEX_OUTGOING = IOProperties.Property.INDEX_OUTGOING.toString();
-    private static final String INDEX_INCOMING = IOProperties.Property.INDEX_INCOMING.toString();
-    private static final String RELATIONSHIP_PREFIX = IOProperties.Property.PREFIX_RELATIONSHIP_FILE.toString();
-    private static final String NODE_PREFIX = IOProperties.Property.PREFIX_NODE_FILE.toString();
+    // Default properties
+    private static final String DELIMITER = IOProperties.Property.CSV_DELIMITER.toString(); // ; | , | space
+    private static final String EXTENSION = IOProperties.Property.CSV_EXTENSION.toString(); // .csv
+    private static final String INDEX_COL = IOProperties.Property.INDEX_COL.toString(); // Id
+    private static final String INDEX_OUTGOING = IOProperties.Property.INDEX_OUTGOING.toString(); // Source
+    private static final String INDEX_INCOMING = IOProperties.Property.INDEX_INCOMING.toString(); // Destination
+    private static final String RELATIONSHIP_PREFIX = IOProperties.Property.PREFIX_RELATIONSHIP_FILE.toString(); // relationship
+    private static final String NODE_PREFIX = IOProperties.Property.PREFIX_NODE_FILE.toString(); // node
 
-    @Context
-    public GraphDatabaseService db;
-
-    @Context
-    public Log log;
+    private GraphDatabaseService db;
+    private Log log;
 
     // Parameters
-    private static Boolean saveRelationshipParams = false;
-    private static Boolean considerNeighborsParams = false;
-    private static String pathParams = null;
+    private Boolean saveRelationshipParams = false;
+    private Boolean considerNeighborsParams = false;
+    private String pathParams = null;
 
-    // Class members (static due to Neo4j limitations)
-    private static Set<Long> nodeLabelMap = null; // List of node Id visited
-    private static Set<Label> closedLabelSet = null; // Already visited Node labels
-    private static List<Label> openLabelList = null; // To visit Node labels
-    private static Set<String> createdFilenameList = null; // Filename created during this session
+    // Class members
+    private Set<Long> nodeLabelMap; // List of node Id visited
+    private Set<Label> closedLabelSet; // Already visited Node labels
+    private List<Label> openLabelList = null; // To visit Node labels
+    private Set<String> createdFilenameList; // Filename created during this session
 
     /**
      * Save relationship between found nodes.
@@ -309,27 +306,11 @@ public class Saver {
         }
     }
 
-
-    /**
-     * Neo4 Procedure entry point for "fexporter.save()". See Neo4j documentation for more information.
-     * @throws ProcedureException
-     */
-    @Description("fexporter.save(LabelsToSave, Path, ZipFileName, SaveRelationship, ConsiderNeighbors) - Save labels to CSV file format. \n" +
-            "Parameters : \n" +
-            "               - @LabelsToSave- <String List> - Labels to save, as a list of string. Ex : [\"C_relationship\", \"F_FrameworkRule\"] " +
-            "               - @Path - <String> - Location to save output results. Ex : \"C:\\User\\John\"" +
-            "               - @ZipFileName - <String> - Name of the final zip file (the extension .zip will be automatically added). Ex : \"Result_05_09\" " +
-            "               - @SaveRelationship - <Boolean> - Save relationships associated to the labels selected. If the option @ConsiderNeighbors is active, relationships involving neighbors' label will also be saved in the process" +
-            "               - @ConsiderNeighbors - <Boolean> - Consider the neighbors of selected labels. If a node in the provided label list has a relationship with another node from a different label, this label will also be saved. " +
-            "                                                  This option does not necessitate the activation of @SaveRelationship to work, but it is strongly recommended to keep the report consistent." +
-            "Example of use : CALL fexporter.save([\"C_relationship\", \"F_FrameworkRule\"], \"C:/Neo4j_exports/\", \"MyReport\", true, true )" +
-            "")
-    @Procedure(value = "fexporter.save", mode = Mode.WRITE)
-    public Stream<OutputMessage> save(@Name(value = "LabelsToSave") List<String> labelList,
-                                      @Name(value = "Path") String path,
-                                      @Name(value = "ZipFileName",defaultValue="export") String zipFileName,
-                                      @Name(value = "SaveRelationship", defaultValue="true") Boolean saveRelationShip,
-                                      @Name(value = "ConsiderNeighbors", defaultValue="false") Boolean considerNeighbors) throws ProcedureException{
+    public Stream<OutputMessage> save(List<String> labelList,
+                                      String path,
+                                      String zipFileName,
+                                      Boolean saveRelationShip,
+                                      Boolean considerNeighbors) throws ProcedureException{
         MESSAGE_QUEUE.clear();
 
         // Init parameters
@@ -337,11 +318,9 @@ public class Saver {
         saveRelationshipParams = saveRelationShip;
         pathParams = path;
 
-        // Init members ( Neo4J decides sometimes to keep the class instantiated)
+        // Init members
         openLabelList = labelList.stream().map(Label::label).collect(Collectors.toList());
-        closedLabelSet = new HashSet<>();
-        nodeLabelMap = new HashSet<>();
-        createdFilenameList = new HashSet<>();
+
 
         String targetName = zipFileName.concat(".zip");
 
@@ -349,11 +328,9 @@ public class Saver {
 
         try {
             saveNodes();
-
             if(saveRelationshipParams) saveRelationships();
 
             createZip(targetName);
-
             MESSAGE_QUEUE.add(new OutputMessage("Saving done"));
             return MESSAGE_QUEUE.stream();
 
@@ -362,4 +339,13 @@ public class Saver {
         }
     }
 
+
+    public Exporter(GraphDatabaseService db, Log log) {
+        this.db = db;
+        this.log = log;
+
+        this.closedLabelSet = new HashSet<>();
+        this.nodeLabelMap = new HashSet<>();
+        this.createdFilenameList = new HashSet<>();
+    }
 }

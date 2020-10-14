@@ -18,11 +18,10 @@ import com.castsoftware.exceptions.ProcedureException;
 import com.castsoftware.exceptions.file.FileIOException;
 import com.castsoftware.exceptions.neo4j.Neo4jNoResult;
 
+import com.castsoftware.exceptions.neo4j.Neo4jQueryException;
 import com.castsoftware.results.OutputMessage;
-
 import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
-import org.neo4j.procedure.*;
 
 import java.io.*;
 import java.util.*;
@@ -70,13 +69,14 @@ public class Exporter {
 
         Map<String, FileWriter> fileWriterMap = new HashMap<>();
 
-        try {
+        try (Transaction tx = db.beginTx()) {
             ArrayList<Relationship> relationships = new ArrayList<>();
             Map<String, Set<String>> relationshipsHeaders = new HashMap<>();
 
             // Parse all relationships, extract headers for each relations
             for (Long index : nodeLabelMap) {
-                Node node = db.getNodeById(index);
+
+                Node node = tx.getNodeById(index);
 
                 for (Relationship rel : node.getRelationships(Direction.OUTGOING)) {
                     Node otherNode = rel.getOtherNode(node);
@@ -188,13 +188,19 @@ public class Exporter {
      * @return <code>String</code> the list of node as CSV
      * @throws Neo4jNoResult No node with the label provided where found during parsing
      */
-    private String exportLabelToCSV(Label label) throws Neo4jNoResult {
+    private String exportLabelToCSV(Label label) throws Neo4jNoResult, Neo4jQueryException {
         Set<String> headers = new HashSet<>();
         List<Node> nodeList = new ArrayList<>();
 
-        ResourceIterator<Node> nodeIt = db.findNodes(label);
+        ResourceIterator<Node> nodeIt = null;
 
-        while (nodeIt.hasNext()) {
+        try(Transaction tx = db.beginTx() ) {
+            nodeIt = tx.findNodes(label);
+        } catch (Exception e) {
+            throw new Neo4jQueryException("An error occured trying to retrieve node by label", e, "SAVExELTC01");
+        }
+
+        while (nodeIt != null && nodeIt.hasNext()) {
             Node n = nodeIt.next();
             // Retrieve all possible node property keys
             for (String s : n.getPropertyKeys()) headers.add(s);
@@ -203,7 +209,7 @@ public class Exporter {
 
         // If no nodes were found, end with exception
         if (nodeList.isEmpty())
-            throw new Neo4jNoResult("No result for findNodes with label".concat(label.name()), "findNodes(".concat(label.name()).concat(");"), "SAVExELTC01");
+            throw new Neo4jNoResult("No result for findNodes with label".concat(label.name()), "findNodes(".concat(label.name()).concat(");"), "SAVExELTC02");
 
         // Create CSV string
         StringBuilder csv = new StringBuilder();
@@ -288,7 +294,7 @@ public class Exporter {
 
             try {
                 content = exportLabelToCSV(toTreat);
-            } catch (Neo4jNoResult e) {
+            } catch (Neo4jNoResult | Neo4jQueryException e) {
                 log.error("Error trying to save label : ".concat(toTreat.name()), e);
                 MESSAGE_QUEUE.add(new OutputMessage("Error : No nodes found with label : ".concat(toTreat.name())));
                 continue;

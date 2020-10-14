@@ -17,7 +17,9 @@ package com.castsoftware.exporter;
 
 import com.castsoftware.exceptions.ProcedureException;
 import com.castsoftware.exceptions.file.FileCorruptedException;
+import com.castsoftware.exceptions.neo4j.Neo4jQueryException;
 import com.castsoftware.results.OutputMessage;
+import org.neo4j.exceptions.Neo4jException;
 import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
 
@@ -143,21 +145,26 @@ public class Importer {
      * @param headers Headers as a list of String
      * @param values Values as a list of String
      */
-    private void createNode(Label label, List<String> headers, List<String> values) {
+    private void createNode(Label label, List<String> headers, List<String> values) throws Neo4jQueryException {
         int indexCol = headers.indexOf(INDEX_COL);
         Long id = Long.parseLong(values.get(indexCol));
 
-        Node n = db.createNode(label);
+        try (Transaction tx = db.beginTx()) {
+            Node n = tx.createNode(label);
 
-        int minSize = Math.min(values.size(), headers.size());
-        for (int i = 0; i < minSize; i++) {
-            if (i == indexCol || values.get(i).isEmpty()) continue; // Index col or empty value
-            Object extractedVal = getNeo4jType(values.get(i));
-            n.setProperty(headers.get(i), extractedVal);
+            int minSize = Math.min(values.size(), headers.size());
+            for (int i = 0; i < minSize; i++) {
+                if (i == indexCol || values.get(i).isEmpty()) continue; // Index col or empty value
+                Object extractedVal = getNeo4jType(values.get(i));
+                n.setProperty(headers.get(i), extractedVal);
+            }
+
+            nodeCreated ++;
+            idBindingMap.put(id, n.getId()); // We need to keep a track of the csv id to bind node together later
+        } catch (Exception e) {
+            throw new Neo4jQueryException("Node creation failed.", e, "IMPOxCREN01");
         }
 
-        nodeCreated ++;
-        idBindingMap.put(id, n.getId()); // We need to keep a track of the csv id to bind node together later
     }
 
     /**
@@ -167,7 +174,7 @@ public class Importer {
      * @param headers List containing the value of the header
      * @param values List containing the value of the relationship
      */
-    private void createRelationship(RelationshipType relationshipType, List<String> headers, List<String> values) {
+    private void createRelationship(RelationshipType relationshipType, List<String> headers, List<String> values) throws Neo4jQueryException {
         int indexOutgoing = headers.indexOf(INDEX_OUTGOING);
         Long idOutgoing = Long.parseLong(values.get(indexOutgoing));
 
@@ -179,8 +186,15 @@ public class Importer {
 
         if( srcNodeId == null || destNodeId == null) return; // Ignore this relationship, at least one node is missing
 
-        Node srcNode = db.getNodeById(srcNodeId);
-        Node destNode = db.getNodeById(destNodeId);
+        Node srcNode = null;
+        Node destNode = null;
+
+        try (Transaction tx = db.beginTx()) {
+            srcNode = tx.getNodeById(srcNodeId);
+            destNode = tx.getNodeById(destNodeId);
+        } catch (Exception e) {
+            throw new Neo4jQueryException("Impossible to retrieve Dest/Src Node.", e, "IMPOxCRER01");
+        }
 
         Relationship rel = srcNode.createRelationshipTo(destNode, relationshipType);
 
@@ -218,7 +232,7 @@ public class Importer {
             List<String> values = sanitizeCSVInput(line);
             try {
                 createNode(label, headerList, values);
-            } catch (Exception e) {
+            } catch (Exception | Neo4jQueryException e) {
                 log.error("An error occurred during creation of node with label : ".concat(associatedLabel).concat(" and values : ").concat(String.join(DELIMITER, values)), e);
             }
         }
@@ -231,7 +245,7 @@ public class Importer {
      * @throws IOException thrown if the procedure fails to read the buffer
      * @throws FileCorruptedException thrown if the file isn't in a good format ( If the headers are missing, or if it does not contains any Source or Destination index column)
      */
-    private void treatRelBuffer(String associatedRelation, BufferedReader relFileBuf) throws IOException, FileCorruptedException {
+    private void treatRelBuffer(String associatedRelation, BufferedReader relFileBuf) throws IOException, FileCorruptedException, Neo4jQueryException {
         String line;
         String headers = relFileBuf.readLine();
         if (headers == null) throw new FileCorruptedException("No header found in file.", "LOADxTNBU01");
@@ -255,7 +269,7 @@ public class Importer {
      * @param file The Zip file to be treated
      * @throws IOException
      */
-    private void parseZip(File file) throws IOException {
+    private void parseZip(File file) throws IOException, Neo4jQueryException {
         Map<BufferedReader, String> nodeBuffers = new HashMap<>();
         Map<BufferedReader, String> relBuffers = new HashMap<>();
 
@@ -304,11 +318,12 @@ public class Importer {
                 } catch (FileCorruptedException e) {
                     log.error("The file".concat(pair.getValue()).concat(" seems to be corrupted. Skipped."));
                     ignoredFile++;
+                } catch (Neo4jQueryException e) {
+                    log.error("Operation failed, check the stack trace for more information.");
+                    throw e;
                 }
             }
 
-        } catch (IOException ioException) {
-            throw ioException;
         } finally {
             // Close bufferedReader
             for(BufferedReader bf : nodeBuffers.keySet()) bf.close();
@@ -329,7 +344,7 @@ public class Importer {
 
         try {
             parseZip(zipFile);
-        } catch (IOException e) {
+        } catch (IOException | Neo4jQueryException e) {
             throw new ProcedureException(e);
         }
 

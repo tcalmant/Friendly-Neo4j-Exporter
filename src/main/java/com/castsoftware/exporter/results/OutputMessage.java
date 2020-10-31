@@ -1,4 +1,4 @@
-package com.castsoftware.results;
+package com.castsoftware.exporter.results;
 
 public class OutputMessage {
     public String output;

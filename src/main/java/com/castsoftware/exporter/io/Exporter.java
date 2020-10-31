@@ -12,14 +12,14 @@
  *      If not, see <https://www.gnu.org/licenses/>.
  */
 
-package com.castsoftware.exporter;
+package com.castsoftware.exporter.io;
 
-import com.castsoftware.exceptions.ProcedureException;
-import com.castsoftware.exceptions.file.FileIOException;
-import com.castsoftware.exceptions.neo4j.Neo4jNoResult;
+import com.castsoftware.exporter.exceptions.ProcedureException;
+import com.castsoftware.exporter.exceptions.file.FileIOException;
+import com.castsoftware.exporter.exceptions.neo4j.Neo4jNoResult;
 
-import com.castsoftware.exceptions.neo4j.Neo4jQueryException;
-import com.castsoftware.results.OutputMessage;
+import com.castsoftware.exporter.exceptions.neo4j.Neo4jQueryException;
+import com.castsoftware.exporter.results.OutputMessage;
 import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
 
@@ -46,6 +46,7 @@ public class Exporter {
 
     private GraphDatabaseService db;
     private Log log;
+    private Transaction tx;
 
     // Parameters
     private Boolean saveRelationshipParams = false;
@@ -69,18 +70,18 @@ public class Exporter {
 
         Map<String, FileWriter> fileWriterMap = new HashMap<>();
 
-        try (Transaction tx = db.beginTx()) {
+        try  {
             ArrayList<Relationship> relationships = new ArrayList<>();
             Map<String, Set<String>> relationshipsHeaders = new HashMap<>();
 
             // Parse all relationships, extract headers for each relations
             for (Long index : nodeLabelMap) {
 
-                Node node = tx.getNodeById(index);
+                Node node = this.tx.getNodeById(index);
 
                 for (Relationship rel : node.getRelationships(Direction.OUTGOING)) {
                     Node otherNode = rel.getOtherNode(node);
-                    // If the node was saved previously, save its associated relationship
+                    // If the node was saved previously, save its associated relationships
                     if (nodeLabelMap.contains(otherNode.getId())) {
                         relationships.add(rel); // Save relationship for later
 
@@ -194,8 +195,8 @@ public class Exporter {
 
         ResourceIterator<Node> nodeIt = null;
 
-        try(Transaction tx = db.beginTx() ) {
-            nodeIt = tx.findNodes(label);
+        try {
+            nodeIt = this.tx.findNodes(label);
         } catch (Exception e) {
             throw new Neo4jQueryException("An error occured trying to retrieve node by label", e, "SAVExELTC01");
         }
@@ -229,6 +230,12 @@ public class Exporter {
                 String value = "";
                 try {
                     value = n.getProperty(prop).toString();
+
+                    // If a semi-colon is present in the value, sanitize the results
+                    if(value.contains(";")) {
+                        value = String.format("\"%s\"", value);
+                    }
+
                 } catch (NotFoundException ignored) {
                 }
                 valueList.add(value);
@@ -327,22 +334,30 @@ public class Exporter {
         // Init members
         openLabelList = labelList.stream().map(Label::label).collect(Collectors.toList());
 
-
-        String targetName = zipFileName.concat(".zip");
-
-        log.info(String.format("Saving Configuration to %s ...", targetName));
-
+        // openTransaction
         try {
+            String targetName = zipFileName.concat(".zip");
+            log.info(String.format("Saving Configuration to %s ...", targetName));
+
+            this.tx = db.beginTx();
+
             saveNodes();
             if(saveRelationshipParams) saveRelationships();
 
             createZip(targetName);
             MESSAGE_QUEUE.add(new OutputMessage("Saving done"));
-            return MESSAGE_QUEUE.stream();
 
+            this.tx.commit();
+
+            return MESSAGE_QUEUE.stream();
         } catch (FileIOException e) {
+            if(this.tx != null) this.tx.rollback();
             throw new ProcedureException(e);
+        } finally {
+            if(this.tx != null) this.tx.close();
         }
+
+
     }
 
 

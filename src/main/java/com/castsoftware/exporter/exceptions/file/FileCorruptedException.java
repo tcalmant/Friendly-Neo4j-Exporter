@@ -13,9 +13,9 @@
  */
 
 
-package com.castsoftware.exceptions.file;
+package com.castsoftware.exporter.exceptions.file;
 
-import com.castsoftware.exceptions.ExporterException;
+import com.castsoftware.exporter.exceptions.ExporterException;
 
 /**
  * The <code>FileNotFound</code> is thrown when the procedure can't read a file because of corrupted file or bad format.

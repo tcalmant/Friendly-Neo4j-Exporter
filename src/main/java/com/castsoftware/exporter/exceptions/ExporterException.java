@@ -12,7 +12,7 @@
  *      If not, see <https://www.gnu.org/licenses/>.
  */
 
-package com.castsoftware.exceptions;
+package com.castsoftware.exporter.exceptions;
 
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;

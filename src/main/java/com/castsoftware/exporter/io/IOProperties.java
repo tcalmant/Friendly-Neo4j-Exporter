@@ -12,11 +12,11 @@
  *      If not, see <https://www.gnu.org/licenses/>.
  */
 
-package com.castsoftware.exporter;
+package com.castsoftware.exporter.io;
 
-import com.castsoftware.exceptions.ExporterException;
-import com.castsoftware.exceptions.file.FileCorruptedException;
-import com.castsoftware.exceptions.file.FileIOException;
+import com.castsoftware.exporter.exceptions.ExporterException;
+import com.castsoftware.exporter.exceptions.file.FileCorruptedException;
+import com.castsoftware.exporter.exceptions.file.FileIOException;
 
 import java.io.IOException;
 import java.util.Properties;

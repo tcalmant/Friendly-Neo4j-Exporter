@@ -13,13 +13,12 @@
  */
 
 
-package com.castsoftware.exporter;
+package com.castsoftware.exporter.io;
 
-import com.castsoftware.exceptions.ProcedureException;
-import com.castsoftware.exceptions.file.FileCorruptedException;
-import com.castsoftware.exceptions.neo4j.Neo4jQueryException;
-import com.castsoftware.results.OutputMessage;
-import org.neo4j.exceptions.Neo4jException;
+import com.castsoftware.exporter.exceptions.ProcedureException;
+import com.castsoftware.exporter.exceptions.file.FileCorruptedException;
+import com.castsoftware.exporter.exceptions.neo4j.Neo4jQueryException;
+import com.castsoftware.exporter.results.OutputMessage;
 import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
 
@@ -49,7 +48,7 @@ public class Importer {
     private static final String RELATIONSHIP_PREFIX = IOProperties.Property.PREFIX_RELATIONSHIP_FILE.toString();
     private static final String NODE_PREFIX = IOProperties.Property.PREFIX_NODE_FILE.toString();
 
-    // Static Members
+    // Members
     private Long countLabelCreated;
     private Long countRelationTypeCreated;
     private Long ignoredFile;
@@ -61,6 +60,7 @@ public class Importer {
 
     private GraphDatabaseService db;
     private Log log;
+    private Transaction tx;
 
     /**
      * Convert a String containing a Neo4j Type to a Java Type
@@ -149,8 +149,8 @@ public class Importer {
         int indexCol = headers.indexOf(INDEX_COL);
         Long id = Long.parseLong(values.get(indexCol));
 
-        try (Transaction tx = db.beginTx()) {
-            Node n = tx.createNode(label);
+        try {
+            Node n = this.tx.createNode(label);
 
             int minSize = Math.min(values.size(), headers.size());
             for (int i = 0; i < minSize; i++) {
@@ -189,9 +189,9 @@ public class Importer {
         Node srcNode = null;
         Node destNode = null;
 
-        try (Transaction tx = db.beginTx()) {
-            srcNode = tx.getNodeById(srcNodeId);
-            destNode = tx.getNodeById(destNodeId);
+        try {
+            srcNode = this.tx.getNodeById(srcNodeId);
+            destNode = this.tx.getNodeById(destNodeId);
         } catch (Exception e) {
             throw new Neo4jQueryException("Impossible to retrieve Dest/Src Node.", e, "IMPOxCRER01");
         }
@@ -334,18 +334,25 @@ public class Importer {
 
     public Stream<OutputMessage> load(String pathToZipFileName) throws ProcedureException {
         MESSAGE_QUEUE.clear();
-        File zipFile = new File(pathToZipFileName);
 
-        // End the procedure if the path specified isn't valid
-        if (!zipFile.exists()) {
-            MESSAGE_QUEUE.add(new OutputMessage("No zip file found at path ".concat(pathToZipFileName).concat(". Please check the path provided")));
-            return MESSAGE_QUEUE.stream();
-        }
+        try  {
+            this.tx = this.db.beginTx();
+            File zipFile = new File(pathToZipFileName);
 
-        try {
+            // End the procedure if the path specified isn't valid
+            if (!zipFile.exists()) {
+                MESSAGE_QUEUE.add(new OutputMessage("No zip file found at path ".concat(pathToZipFileName).concat(". Please check the path provided")));
+                return MESSAGE_QUEUE.stream();
+            }
+
             parseZip(zipFile);
+            this.tx.commit();
+
         } catch (IOException | Neo4jQueryException e) {
+            if (this.tx != null) this.tx.rollback();
             throw new ProcedureException(e);
+        } finally {
+            if (this.tx != null) this.tx.close();
         }
 
         MESSAGE_QUEUE.add(new OutputMessage(String.format("%d file(s) containing a label where found and processed.", countLabelCreated)));

@@ -13,9 +13,9 @@
  */
 
 
-package com.castsoftware.exceptions.neo4j;
+package com.castsoftware.exporter.exceptions.neo4j;
 
-import com.castsoftware.exceptions.ExporterException;
+import com.castsoftware.exporter.exceptions.ExporterException;
 
 /**
  * The <code>Neo4jBadRequest</code> is thrown when the Neo4j request fails.

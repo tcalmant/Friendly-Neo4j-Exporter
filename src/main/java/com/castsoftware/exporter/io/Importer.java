@@ -75,7 +75,7 @@ public class Importer {
      */
     private Object getNeo4jType(String value) {
 
-        // Boolean
+        // Integer
         try { return Integer.parseInt(value); } catch (NumberFormatException ignored) { }
         // Byte
         try { return Byte.parseByte(value); } catch (NumberFormatException ignored) { }
@@ -85,6 +85,11 @@ public class Importer {
         try { return Long.parseLong(value); } catch (NumberFormatException ignored) { }
         // Double
         try { return Double.parseDouble(value); } catch (NumberFormatException ignored) { }
+
+        // Boolean
+        if(value.matches("true|false")) {
+            return Boolean.parseBoolean(value);
+        }
 
         // DateTimeFormatter covering all Neo4J Date Format  (cf : https://neo4j.com/docs/cypher-manual/current/syntax/temporal/ )
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("[YYYY-MM-DD]" +

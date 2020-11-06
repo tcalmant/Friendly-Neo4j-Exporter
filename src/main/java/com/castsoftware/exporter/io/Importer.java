@@ -87,7 +87,7 @@ public class Importer {
         try { return Double.parseDouble(value); } catch (NumberFormatException ignored) { }
 
         // Boolean
-        if(value.matches("true|false")) {
+        if(value.toLowerCase().matches("true|false")) {
             return Boolean.parseBoolean(value);
         }
 

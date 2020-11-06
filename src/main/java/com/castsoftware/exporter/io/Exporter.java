@@ -232,12 +232,12 @@ public class Exporter {
                     value = n.getProperty(prop).toString();
 
                     // If a semi-colon is present in the value, sanitize the results
-                    if(value.contains(";")) {
+                    if(value.matches("[,:';\\.]")) {
                         value = String.format("\"%s\"", value);
                     }
-
                 } catch (NotFoundException ignored) {
                 }
+
                 valueList.add(value);
             }
             csv.append(String.join(DELIMITER, valueList)).append("\n");

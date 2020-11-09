@@ -30,6 +30,8 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -117,6 +119,10 @@ public class Importer {
         // Char
         if (value.length() == 1) return value.charAt(0);
 
+        // Remove Sanitization
+        value = value.replaceAll("(^\\s\")|(\\s\"\\s?$)", "");
+
+        log.info("Value inserted : " + value);
         // String
         return value;
     }
@@ -127,7 +133,10 @@ public class Importer {
      * @return Sanitized string
      */
     private List<String> sanitizeCSVInput(String input) {
-        return Arrays.asList(input.replaceAll("\\\\r\\\\n", "").split(DELIMITER));
+        // Split using delimiters. Ignore delimiter surrounded by quotations marks.
+        return Arrays
+                .asList(input.replaceAll("\\\\r\\\\n", "")
+                        .split(DELIMITER + "(?=(?:[^\\\"]*\\\"[^\\\"]*\\\")*[^\\\"]*$)"));
     }
 
     /**

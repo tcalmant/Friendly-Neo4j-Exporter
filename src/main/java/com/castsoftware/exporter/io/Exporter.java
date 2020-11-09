@@ -274,7 +274,6 @@ public class Exporter {
                     while((length = fileStream.read(bytes)) >= 0) {
                         zipOut.write(bytes, 0, length);
                     }
-
                 } catch (Exception e) {
                     log.error("An error occurred trying to zip file with name : ".concat(filename), e);
                 }

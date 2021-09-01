@@ -112,9 +112,15 @@ public class Exporter {
                     createdFilenameList.add(filename);
 
                     StringBuilder headers = new StringBuilder();
-                    headers.append(INDEX_OUTGOING.concat(DELIMITER)); // Add Source property
-                    headers.append(INDEX_INCOMING.concat(DELIMITER)); // Add Destination property
-                    headers.append(String.join(DELIMITER, pair.getValue())).append("\n");
+                    headers.append(INDEX_OUTGOING).append(DELIMITER); // Add Source property
+                    headers.append(INDEX_INCOMING); // Add Destination property
+
+                    final Set<String> relPropHeaders = pair.getValue();
+                    if(!relPropHeaders.isEmpty()) {
+                        headers.append(DELIMITER);
+                        headers.append(String.join(DELIMITER, pair.getValue()));
+                    }
+                    headers.append("\n");
 
                     writer.write(headers.toString());
                 } catch (IOException e) {
@@ -215,8 +221,12 @@ public class Exporter {
 
         // Create CSV string
         StringBuilder csv = new StringBuilder();
-        csv.append(INDEX_COL.concat(DELIMITER)); // Add index property
-        csv.append(String.join(DELIMITER, headers)).append("\n");
+        csv.append(INDEX_COL);
+        if(!headers.isEmpty()) {
+            csv.append(DELIMITER); // Add index property
+            csv.append(String.join(DELIMITER, headers));
+        }
+        csv.append("\n");
 
         log.info("Appending headers for label ".concat(label.name()));
 

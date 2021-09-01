@@ -25,6 +25,7 @@ import org.neo4j.logging.Log;
 
 import java.io.*;
 import java.lang.reflect.Array;
+import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -107,7 +108,7 @@ public class Exporter {
 
                 try {
                     // Create a new file writer and write headers for each relationship type
-                    FileWriter writer = new FileWriter(pathParams.concat(filename), true);
+                    FileWriter writer = new FileWriter(Paths.get(pathParams).resolve(filename).toFile(), true);
                     fileWriterMap.put(pair.getKey(), writer);
                     createdFilenameList.add(filename);
 
@@ -268,13 +269,13 @@ public class Exporter {
      * @throws IOException
      */
     private void createZip(String targetName) throws FileIOException {
-        File f = new File(pathParams.concat(targetName));
+        File f = Paths.get(pathParams).resolve(targetName).toFile();
         log.info("Creating zip file..");
 
         try (ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(f))) {
 
             for(String filename : createdFilenameList) {
-                File fileToZip = new File(pathParams.concat(filename));
+                File fileToZip = Paths.get(pathParams).resolve(filename).toFile();
 
                 try (FileInputStream fileStream = new FileInputStream(fileToZip)){
                     ZipEntry e = new ZipEntry(filename);
@@ -320,7 +321,7 @@ public class Exporter {
             String filename = NODE_PREFIX.concat(toTreat.name()).concat(EXTENSION);
             createdFilenameList.add(filename);
 
-            try (FileWriter writer = new FileWriter(pathParams.concat(filename), true)) {
+            try (FileWriter writer = new FileWriter(Paths.get(pathParams).resolve(filename).toFile(), true)) {
                 writer.write(content);
             } catch (Exception e) {
                 throw new FileIOException("Error : Impossible to create/open file with name ".concat(filename), e, "SAVExSAVE01");

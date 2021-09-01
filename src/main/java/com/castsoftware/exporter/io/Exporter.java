@@ -24,6 +24,7 @@ import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
 
 import java.io.*;
+import java.lang.reflect.Array;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -139,7 +140,7 @@ public class Exporter {
                 for (String prop : headers) {
                     String value = "";
                     try {
-                        value = rel.getProperty(prop).toString();
+                        value = smartString(rel.getProperty(prop));
                     } catch (NotFoundException ignored) {
                     }
                     valueList.add(value);
@@ -229,7 +230,7 @@ public class Exporter {
             for (String prop : headers) {
                 String value = "";
                 try {
-                    value = n.getProperty(prop).toString();
+                    value = smartString(n.getProperty(prop));
 
                     // If a semi-colon is present in the value, sanitize the results
                     if(value.matches("[,:';\\.]")) {
@@ -357,6 +358,29 @@ public class Exporter {
         }
 
 
+    }
+
+    /**
+     * Smarter conversion of Java object to string (handles arrays)
+     *
+     * @param obj  Any object
+     * @return String representation of the object
+     */
+    public String smartString(Object obj) {
+        if(obj != null && obj.getClass().isArray()) {
+            final StringBuilder builder = new StringBuilder("[");
+            for(int i = 0; i < Array.getLength(obj); i++) {
+                if(i > 0) {
+                    builder.append(", ");
+                }
+                builder.append(smartString(Array.get(obj, i)));
+            }
+
+            builder.append("]");
+            return builder.toString();
+        } else {
+            return String.valueOf(obj);
+        }
     }
 
 

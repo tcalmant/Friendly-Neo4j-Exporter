@@ -62,11 +62,6 @@ public class Exporter {
     private final Log log;
 
     /**
-     * Queries transaction
-     */
-    private Transaction tx;
-
-    /**
      * IDs of the nodes visited
      */
     private final Set<Long> nodeLabelMap = new LinkedHashSet<>();
@@ -77,14 +72,14 @@ public class Exporter {
     private final Set<Label> closedLabelSet = new LinkedHashSet<>();
 
     /**
-     * Lists of the labels we have to visit
-     */
-    private List<Label> openLabelList = new LinkedList<>();
-
-    /**
      * List of the files we created during the visit
      */
     private final Set<String> createdFilenameList = new LinkedHashSet<>();
+
+    /**
+     * Lists of the labels we have to visit
+     */
+    private List<Label> openLabelList = new LinkedList<>();
 
     /**
      * @param db  Neo4J database access
@@ -101,10 +96,12 @@ public class Exporter {
      * Then, it will create associated file, pushes the full set of header values, and write back the relationships.
      * If a relationship doesn't contain a property value, the column for this row will be left empty.
      *
-     * @param aCSVFormat Format of the output CSV file
+     * @param aTransaction Current DB transaction
+     * @param aOutPath     Output folder
+     * @param aCSVFormat   Format of the output CSV file
      * @throws FileIOException Error writing file
      */
-    private void saveRelationships(final Path outPath, final CSVFormat aCSVFormat) throws FileIOException, IOException {
+    private void saveRelationships(final Transaction aTransaction, final Path aOutPath, final CSVFormat aCSVFormat) throws FileIOException, IOException {
 
         // All relations returned by Neo4J
         final List<Relationship> relationships = new LinkedList<>();
@@ -114,7 +111,7 @@ public class Exporter {
 
         // Parse all relationships, extract headers for each relationship
         for (final Long index : nodeLabelMap) {
-            final Node node = this.tx.getNodeById(index);
+            final Node node = aTransaction.getNodeById(index);
 
             for (final Relationship rel : node.getRelationships(Direction.OUTGOING)) {
                 final Node otherNode = rel.getOtherNode(node);
@@ -155,7 +152,7 @@ public class Exporter {
 
                 // Prepare the printer
                 final String filename = RELATIONSHIP_PREFIX + relName + EXTENSION;
-                final File outFile = outPath.resolve(filename).toFile();
+                final File outFile = aOutPath.resolve(filename).toFile();
                 final CSVPrinter csvPrinter = new CSVPrinter(new FileWriter(outFile), aCSVFormat);
                 openedPrinters.put(relName, csvPrinter);
 
@@ -229,21 +226,22 @@ public class Exporter {
      * Convert a node list associated to the given label into a CSV format.
      * If the option @ConsiderNeighbors is active, neighbors label found will be added to the discovery list.
      *
-     * @param printer The CSV printer
-     * @param label   The label to save
+     * @param aTransaction      Current DB transaction
+     * @param printer           The CSV printer
+     * @param label             The label to save
      * @param considerNeighbors If True, analyze the neighbouring nodes
      * @throws Neo4jNoResult       No node with the label provided where found during parsing
      * @throws Neo4jQueryException Error while querying the database
      * @throws IOException         Error writing down the CSV file
      */
-    private void exportLabelToCSV(final CSVPrinter printer, final Label label, final boolean considerNeighbors) throws Neo4jNoResult, Neo4jQueryException, IOException {
+    private void exportLabelToCSV(final Transaction aTransaction, final CSVPrinter printer, final Label label, final boolean considerNeighbors) throws Neo4jNoResult, Neo4jQueryException, IOException {
         final Set<String> propertiesSet = new HashSet<>();
         final List<Node> nodeList = new ArrayList<>();
 
         // Find all nodes of that label
         ResourceIterator<Node> nodeIt;
         try {
-            nodeIt = this.tx.findNodes(label);
+            nodeIt = aTransaction.findNodes(label);
         } catch (Exception e) {
             throw new Neo4jQueryException("An error occurred trying to retrieve node by label", e, "SAVExELTC01");
         }
@@ -280,7 +278,11 @@ public class Exporter {
 
             // Print the properties
             for (final String property : sortedProps) {
-                printer.print(node.getProperty(property));
+                try {
+                    printer.print(node.getProperty(property));
+                } catch (NotFoundException ex) {
+                    printer.print(null);
+                }
             }
             // End of the node
             printer.println();
@@ -321,8 +323,9 @@ public class Exporter {
                     log.error("An error occurred trying to zip file with name: " + filename, e);
                 }
 
-                if (!fileToZip.delete())
+                if (!fileToZip.delete()) {
                     log.error("Error trying to delete file with name: " + filename);
+                }
             }
 
         } catch (IOException e) {
@@ -335,22 +338,23 @@ public class Exporter {
     /**
      * Iterate through label list, find associated nodes and export them to a CSV file.
      *
-     * @param outputPath Path where to write the CSV files
-     * @param aCSVFormat Format of the output CSV files
+     * @param aTransaction       Current DB transaction
+     * @param aOutputPath        Path where to write the CSV files
+     * @param aCSVFormat         Format of the output CSV files
      * @param aConsiderNeighbors If true, analyze neighboring nodes
      * @throws FileIOException Error writing file
      */
-    private void saveNodes(final Path outputPath, final CSVFormat aCSVFormat, final boolean aConsiderNeighbors) throws FileIOException {
+    private void saveNodes(final Transaction aTransaction, final Path aOutputPath, final CSVFormat aCSVFormat, final boolean aConsiderNeighbors) throws FileIOException {
         while (!openLabelList.isEmpty()) {
             final Label toTreat = openLabelList.remove(0);
 
             // Compute the name of the output file
             final String filename = NODE_PREFIX + toTreat.name() + EXTENSION;
-            final File outFile = outputPath.resolve(filename).toFile();
+            final File outFile = aOutputPath.resolve(filename).toFile();
             createdFilenameList.add(filename);
 
             try (final CSVPrinter printer = new CSVPrinter(new FileWriter(outFile), aCSVFormat)) {
-                exportLabelToCSV(printer, toTreat, aConsiderNeighbors);
+                exportLabelToCSV(aTransaction, printer, toTreat, aConsiderNeighbors);
             } catch (Neo4jNoResult | Neo4jQueryException ex) {
                 log.error("Error trying to save label: " + toTreat.name(), ex);
                 MESSAGE_QUEUE.add(new OutputMessage("Error : No nodes found with label : ".concat(toTreat.name())));
@@ -393,43 +397,35 @@ public class Exporter {
 
         // Update the CSVFormat
         CSVFormat csvFormat = CSVFormat.EXCEL;
-        if(DELIMITER != null && DELIMITER.length() == 1) {
+        if (DELIMITER != null && DELIMITER.length() == 1) {
             csvFormat = csvFormat.withDelimiter(DELIMITER.charAt(0));
         }
 
         // openTransaction
-        try {
-            final String targetName = zipFileName.concat(".zip");
-            log.info(String.format("Saving Configuration to %s ...", targetName));
-
-            this.tx = db.beginTx();
-
-            saveNodes(outputPath, csvFormat, considerNeighbors);
+        try (final Transaction tx = db.beginTx()) {
+            saveNodes(tx, outputPath, csvFormat, considerNeighbors);
             if (saveRelationShip) {
-                saveRelationships(outputPath, csvFormat);
+                saveRelationships(tx, outputPath, csvFormat);
             }
 
-            createZip(outputPath, outputPath.resolve(targetName));
-            MESSAGE_QUEUE.add(new OutputMessage("Saving done"));
+            if (zipFileName == null || zipFileName.isEmpty()) {
+                MESSAGE_QUEUE.add(new OutputMessage("CSV files created."));
+            } else {
+                final String targetZipName = zipFileName + ".zip";
+                log.info(String.format("Saving Configuration to %s ...", targetZipName));
+
+                createZip(outputPath, outputPath.resolve(targetZipName));
+                MESSAGE_QUEUE.add(new OutputMessage("ZIP file created."));
+            }
 
             // Commit the transaction
             tx.commit();
 
             return MESSAGE_QUEUE.stream();
         } catch (FileIOException e) {
-            if (tx != null) {
-                tx.rollback();
-            }
             throw new ProcedureException(e);
         } catch (IOException ex) {
-            if (tx != null) {
-                tx.rollback();
-            }
             throw new ProcedureException(ex.getMessage(), ex);
-        } finally {
-            if (tx != null) {
-                tx.close();
-            }
         }
     }
 }

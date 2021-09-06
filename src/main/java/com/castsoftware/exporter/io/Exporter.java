@@ -17,14 +17,17 @@ package com.castsoftware.exporter.io;
 import com.castsoftware.exporter.exceptions.ProcedureException;
 import com.castsoftware.exporter.exceptions.file.FileIOException;
 import com.castsoftware.exporter.exceptions.neo4j.Neo4jNoResult;
-
 import com.castsoftware.exporter.exceptions.neo4j.Neo4jQueryException;
 import com.castsoftware.exporter.results.OutputMessage;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVPrinter;
 import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
 
 import java.io.*;
-import java.lang.reflect.Array;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -34,7 +37,9 @@ import java.util.zip.ZipOutputStream;
 
 public class Exporter {
 
-    // Return message queue
+    /**
+     * Output message queue
+     */
     private static final List<OutputMessage> MESSAGE_QUEUE = new ArrayList<>();
 
     // Default properties
@@ -46,125 +51,155 @@ public class Exporter {
     private static final String RELATIONSHIP_PREFIX = IOProperties.Property.PREFIX_RELATIONSHIP_FILE.toString(); // relationship
     private static final String NODE_PREFIX = IOProperties.Property.PREFIX_NODE_FILE.toString(); // node
 
-    private GraphDatabaseService db;
-    private Log log;
+    /**
+     * Access to Neo4J DB
+     */
+    private final GraphDatabaseService db;
+
+    /**
+     * Neo4J Logger
+     */
+    private final Log log;
+
+    /**
+     * Queries transaction
+     */
     private Transaction tx;
 
-    // Parameters
-    private Boolean saveRelationshipParams = false;
-    private Boolean considerNeighborsParams = false;
-    private String pathParams = null;
+    /**
+     * IDs of the nodes visited
+     */
+    private final Set<Long> nodeLabelMap = new LinkedHashSet<>();
 
-    // Class members
-    private Set<Long> nodeLabelMap; // List of node Id visited
-    private Set<Label> closedLabelSet; // Already visited Node labels
-    private List<Label> openLabelList = null; // To visit Node labels
-    private Set<String> createdFilenameList; // Filename created during this session
+    /**
+     * Labels we already have written down
+     */
+    private final Set<Label> closedLabelSet = new LinkedHashSet<>();
+
+    /**
+     * Lists of the labels we have to visit
+     */
+    private List<Label> openLabelList = new LinkedList<>();
+
+    /**
+     * List of the files we created during the visit
+     */
+    private final Set<String> createdFilenameList = new LinkedHashSet<>();
+
+    /**
+     * @param db  Neo4J database access
+     * @param log Neo4J logger
+     */
+    public Exporter(final GraphDatabaseService db, final Log log) {
+        this.db = db;
+        this.log = log;
+    }
 
     /**
      * Save relationship between found nodes.
      * The saving process will parse relationships a first time to extract all possible properties.
      * Then, it will create associated file, pushes the full set of header values, and write back the relationships.
      * If a relationship doesn't contain a property value, the column for this row will be left empty.
-     * @throws FileIOException
+     *
+     * @param aCSVFormat Format of the output CSV file
+     * @throws FileIOException Error writing file
      */
-    private void saveRelationships() throws FileIOException {
+    private void saveRelationships(final Path outPath, final CSVFormat aCSVFormat) throws FileIOException, IOException {
 
-        Map<String, FileWriter> fileWriterMap = new HashMap<>();
+        // All relations returned by Neo4J
+        final List<Relationship> relationships = new LinkedList<>();
 
-        try  {
-            ArrayList<Relationship> relationships = new ArrayList<>();
-            Map<String, Set<String>> relationshipsHeaders = new HashMap<>();
+        // Detected header for each relation
+        final Map<String, Set<String>> relationshipsHeaders = new HashMap<>();
 
-            // Parse all relationships, extract headers for each relations
-            for (Long index : nodeLabelMap) {
+        // Parse all relationships, extract headers for each relationship
+        for (final Long index : nodeLabelMap) {
+            final Node node = this.tx.getNodeById(index);
 
-                Node node = this.tx.getNodeById(index);
+            for (final Relationship rel : node.getRelationships(Direction.OUTGOING)) {
+                final Node otherNode = rel.getOtherNode(node);
+                // If the node was saved previously, save its associated relationships
+                if (nodeLabelMap.contains(otherNode.getId())) {
+                    // Save relationship for later
+                    relationships.add(rel);
 
-                for (Relationship rel : node.getRelationships(Direction.OUTGOING)) {
-                    Node otherNode = rel.getOtherNode(node);
-                    // If the node was saved previously, save its associated relationships
-                    if (nodeLabelMap.contains(otherNode.getId())) {
-                        relationships.add(rel); // Save relationship for later
+                    final String relName = rel.getType().name();
+                    final List<String> properties = new ArrayList<>();
+                    for (final String propName : rel.getPropertyKeys()) {
+                        // Extract Iterable to List
+                        properties.add(propName);
+                    }
 
-                        String name = rel.getType().name();
-                        List<String> properties = new ArrayList<>();
-                        for (String prop : rel.getPropertyKeys()) properties.add(prop); // Extract Iterable to List
-
-                        // Append or create header for this relationship
-                        if (relationshipsHeaders.containsKey(name)) {
-                            relationshipsHeaders.get(name).addAll(properties);
-                        } else {
-                            relationshipsHeaders.put(name, new HashSet<>(properties));
-                        }
+                    // Append or create header for this relationship
+                    if (relationshipsHeaders.containsKey(relName)) {
+                        relationshipsHeaders.get(relName).addAll(properties);
+                    } else {
+                        relationshipsHeaders.put(relName, new HashSet<>(properties));
                     }
                 }
             }
+        }
 
-            // Open one FileWriter per name and append headers
-            for (Map.Entry<String, Set<String>> pair : relationshipsHeaders.entrySet()) {
+        // Map of the writers: kind of relation -> CSV printer
+        final Map<String, CSVPrinter> openedPrinters = new LinkedHashMap<>();
+        // Sorted header of each relation
+        final Map<String, List<String>> sortedProperties = new HashMap<>();
 
-                String filename = RELATIONSHIP_PREFIX.concat(pair.getKey()).concat(EXTENSION);
+        try {
+            // Sort the headers and prepare the printer
+            for (final Map.Entry<String, Set<String>> relHeader : relationshipsHeaders.entrySet()) {
+                // Sort the header
+                final String relName = relHeader.getKey();
+                final List<String> sortedProps = relHeader.getValue().stream().sorted().collect(Collectors.toList());
+                sortedProperties.put(relName, sortedProps);
 
-                try {
-                    // Create a new file writer and write headers for each relationship type
-                    FileWriter writer = new FileWriter(Paths.get(pathParams).resolve(filename).toFile(), true);
-                    fileWriterMap.put(pair.getKey(), writer);
-                    createdFilenameList.add(filename);
+                // Prepare the printer
+                final String filename = RELATIONSHIP_PREFIX + relName + EXTENSION;
+                final File outFile = outPath.resolve(filename).toFile();
+                final CSVPrinter csvPrinter = new CSVPrinter(new FileWriter(outFile), aCSVFormat);
+                openedPrinters.put(relName, csvPrinter);
 
-                    StringBuilder headers = new StringBuilder();
-                    headers.append(INDEX_OUTGOING).append(DELIMITER); // Add Source property
-                    headers.append(INDEX_INCOMING); // Add Destination property
-
-                    final Set<String> relPropHeaders = pair.getValue();
-                    if(!relPropHeaders.isEmpty()) {
-                        headers.append(DELIMITER);
-                        headers.append(String.join(DELIMITER, pair.getValue()));
-                    }
-                    headers.append("\n");
-
-                    writer.write(headers.toString());
-                } catch (IOException e) {
-                    log.error("Error : Impossible to create/open file with name ".concat(filename), e);
+                // Write the header
+                csvPrinter.print(INDEX_OUTGOING);
+                csvPrinter.print(INDEX_INCOMING);
+                for (final String propName : sortedProps) {
+                    csvPrinter.print(propName);
                 }
+                csvPrinter.println();
             }
 
-            // Parse previously saved relationships and write them back to their associated FileWriter
-            for(Relationship rel : relationships) {
-                String name = rel.getType().name();
+            // Write all relations
+            for (final Relationship rel : relationships) {
+                // Get the name of the relation
+                final String relName = rel.getType().name();
 
-                Set<String> headers = relationshipsHeaders.get(name);
-                StringBuilder values = new StringBuilder();
+                // Find the related information
+                final CSVPrinter csvPrinter = openedPrinters.get(relName);
+                final List<String> sortedProps = sortedProperties.get(relName);
 
-                List<String> valueList = new ArrayList<>();
-                // Append Source and destination nodes ID
-                Long idSrc = rel.getStartNode().getId();
-                Long idDest = rel.getEndNode().getId();
-                valueList.add(idSrc.toString());
-                valueList.add(idDest.toString());
+                // Print the edge
+                csvPrinter.print(rel.getStartNodeId());
+                csvPrinter.print(rel.getEndNodeId());
 
-                // Append rest of the properties
-                for (String prop : headers) {
-                    String value = "";
+                // Add properties
+                for (final String propName : sortedProps) {
                     try {
-                        value = smartString(rel.getProperty(prop));
-                    } catch (NotFoundException ignored) {
+                        csvPrinter.print(rel.getProperty(propName));
+                    } catch (NotFoundException ex) {
+                        // Property not used here
+                        csvPrinter.print(null);
                     }
-                    valueList.add(value);
                 }
 
-                fileWriterMap.get(name).write(String.join(DELIMITER, valueList).concat("\n"));
+                // End of relation
+                csvPrinter.println();
             }
-
-        } catch (IOException rethrown ) {
-            throw new FileIOException("Error while saving relationships", rethrown, "SAVExSARE01");
         } finally {
-            // Close FileWriters
-            for (Map.Entry<String, FileWriter> pair : fileWriterMap.entrySet()) {
+            for (final CSVPrinter csvPrinter : openedPrinters.values()) {
                 try {
-                    pair.getValue().close();
-                } catch (IOException e) {
-                    log.error("Error : Impossible to close file with name ".concat(pair.getKey()), e);
+                    csvPrinter.close();
+                } catch (IOException ex) {
+                    log.error("Error closing CSV printer", ex);
                 }
             }
         }
@@ -173,128 +208,125 @@ public class Exporter {
     /**
      * Explore neighborhood of specified node and extract potentials neighbors' label.
      * New labels will be added to the open list
-     * @param n Node to study
+     *
+     * @param node Node to study
      */
-    private void handleNeighbors(Node n) {
-        for (Relationship rel : n.getRelationships()) {
-            Node otherNode = rel.getOtherNode(n);
+    private void handleNeighbors(final Node node) {
+        for (final Relationship rel : node.getRelationships()) {
+            final Node otherNode = rel.getOtherNode(node);
 
             // Retrieve all neighbor's labels
-            for (Label l : otherNode.getLabels()) {
+            for (final Label label : otherNode.getLabels()) {
                 // If the label wasn't already visited or not already appended, add to open list
-                if (!closedLabelSet.contains(l) && !openLabelList.contains(l)) {
-                    openLabelList.add(l);
+                if (!closedLabelSet.contains(label) && !openLabelList.contains(label)) {
+                    openLabelList.add(label);
                 }
             }
         }
-
     }
 
     /**
      * Convert a node list associated to the given label into a CSV format.
      * If the option @ConsiderNeighbors is active, neighbors label found will be added to the discovery list.
-     * @param label The label to save
-     * @return <code>String</code> the list of node as CSV
-     * @throws Neo4jNoResult No node with the label provided where found during parsing
+     *
+     * @param printer The CSV printer
+     * @param label   The label to save
+     * @param considerNeighbors If True, analyze the neighbouring nodes
+     * @throws Neo4jNoResult       No node with the label provided where found during parsing
+     * @throws Neo4jQueryException Error while querying the database
+     * @throws IOException         Error writing down the CSV file
      */
-    private String exportLabelToCSV(Label label) throws Neo4jNoResult, Neo4jQueryException {
-        Set<String> headers = new HashSet<>();
-        List<Node> nodeList = new ArrayList<>();
+    private void exportLabelToCSV(final CSVPrinter printer, final Label label, final boolean considerNeighbors) throws Neo4jNoResult, Neo4jQueryException, IOException {
+        final Set<String> propertiesSet = new HashSet<>();
+        final List<Node> nodeList = new ArrayList<>();
 
-        ResourceIterator<Node> nodeIt = null;
-
+        // Find all nodes of that label
+        ResourceIterator<Node> nodeIt;
         try {
             nodeIt = this.tx.findNodes(label);
         } catch (Exception e) {
-            throw new Neo4jQueryException("An error occured trying to retrieve node by label", e, "SAVExELTC01");
+            throw new Neo4jQueryException("An error occurred trying to retrieve node by label", e, "SAVExELTC01");
         }
 
         while (nodeIt != null && nodeIt.hasNext()) {
-            Node n = nodeIt.next();
+            final Node node = nodeIt.next();
             // Retrieve all possible node property keys
-            for (String s : n.getPropertyKeys()) headers.add(s);
-            nodeList.add(n);
+            for (final String propName : node.getPropertyKeys()) {
+                propertiesSet.add(propName);
+            }
+            nodeList.add(node);
         }
 
         // If no nodes were found, end with exception
-        if (nodeList.isEmpty())
-            throw new Neo4jNoResult("No result for findNodes with label".concat(label.name()), "findNodes(".concat(label.name()).concat(");"), "SAVExELTC02");
-
-        // Create CSV string
-        StringBuilder csv = new StringBuilder();
-        csv.append(INDEX_COL);
-        if(!headers.isEmpty()) {
-            csv.append(DELIMITER); // Add index property
-            csv.append(String.join(DELIMITER, headers));
+        if (nodeList.isEmpty()) {
+            throw new Neo4jNoResult("No result for findNodes with label " + label.name(),
+                    "findNodes(" + label.name() + ");", "SAVExELTC02");
         }
-        csv.append("\n");
 
-        log.info("Appending headers for label ".concat(label.name()));
+        // Write the header
+        final List<String> sortedProps = propertiesSet.stream().sorted().collect(Collectors.toList());
+        final List<String> fullHeader = new ArrayList<>(propertiesSet.size() + 1);
+        fullHeader.add(INDEX_COL);
+        fullHeader.addAll(sortedProps);
+        printer.printRecord(fullHeader);
 
-        for (Node n : nodeList) {
-            List<String> valueList = new ArrayList<>();
+        log.info("Appending headers for label " + label.name());
 
-            // Using the Neo4j Node ID
-            valueList.add(((Long) n.getId()).toString());
-            nodeLabelMap.add(n.getId());
+        for (final Node node : nodeList) {
+            // Print the index
+            final long nodeId = node.getId();
+            printer.print(nodeId);
+            nodeLabelMap.add(nodeId);
 
-            for (String prop : headers) {
-                String value = "";
-                try {
-                    value = smartString(n.getProperty(prop));
-
-                    // If a semi-colon is present in the value, sanitize the results
-                    if(value.matches("[,:';\\.]")) {
-                        value = String.format("\"%s\"", value);
-                    }
-                } catch (NotFoundException ignored) {
-                }
-
-                valueList.add(value);
+            // Print the properties
+            for (final String property : sortedProps) {
+                printer.print(node.getProperty(property));
             }
-            csv.append(String.join(DELIMITER, valueList)).append("\n");
+            // End of the node
+            printer.println();
 
-            if(considerNeighborsParams) handleNeighbors(n);
+            if (considerNeighbors) {
+                handleNeighbors(node);
+            }
         }
 
         // Mark the label as visited
         closedLabelSet.add(label);
-        return csv.toString();
     }
 
     /**
      * Appends all the files created during this process to the target zip.
      * Every file appended will be remove once added to the zip.
-     * @param targetName Name of the ZipFile
-     * @throws IOException
+     *
+     * @param csvFolder Folder where to find the CSV files
+     * @param outputZip Path to the output ZIP file
+     * @throws FileIOException Error writing ZIP file / reading CSV file
      */
-    private void createZip(String targetName) throws FileIOException {
-        File f = Paths.get(pathParams).resolve(targetName).toFile();
+    private void createZip(final Path csvFolder, final Path outputZip) throws FileIOException {
         log.info("Creating zip file..");
+        try (final ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(outputZip.toFile()))) {
+            for (final String filename : createdFilenameList) {
+                final File fileToZip = csvFolder.resolve(filename).toFile();
 
-        try (ZipOutputStream zipOut = new ZipOutputStream(new FileOutputStream(f))) {
+                try (final FileInputStream fileStream = new FileInputStream(fileToZip)) {
+                    final ZipEntry zipEntry = new ZipEntry(filename);
+                    zipOut.putNextEntry(zipEntry);
 
-            for(String filename : createdFilenameList) {
-                File fileToZip = Paths.get(pathParams).resolve(filename).toFile();
-
-                try (FileInputStream fileStream = new FileInputStream(fileToZip)){
-                    ZipEntry e = new ZipEntry(filename);
-                    zipOut.putNextEntry(e);
-
-                    byte[] bytes = new byte[1024];
+                    final byte[] bytes = new byte[1024];
                     int length;
-                    while((length = fileStream.read(bytes)) >= 0) {
+                    while ((length = fileStream.read(bytes)) >= 0) {
                         zipOut.write(bytes, 0, length);
                     }
                 } catch (Exception e) {
-                    log.error("An error occurred trying to zip file with name : ".concat(filename), e);
+                    log.error("An error occurred trying to zip file with name: " + filename, e);
                 }
 
-                if(!fileToZip.delete()) log.error("Error trying to delete file with name : ".concat(filename));
+                if (!fileToZip.delete())
+                    log.error("Error trying to delete file with name: " + filename);
             }
 
         } catch (IOException e) {
-            log.error("An error occurred trying create zip file with name : ".concat(targetName), e);
+            log.error("An error occurred trying create zip file with name: " + outputZip.getFileName(), e);
             throw new FileIOException("An error occurred trying create zip file with name.", e, "SAVExCZIP01");
         }
 
@@ -302,105 +334,102 @@ public class Exporter {
 
     /**
      * Iterate through label list, find associated nodes and export them to a CSV file.
-     * @throws FileIOException
+     *
+     * @param outputPath Path where to write the CSV files
+     * @param aCSVFormat Format of the output CSV files
+     * @param aConsiderNeighbors If true, analyze neighboring nodes
+     * @throws FileIOException Error writing file
      */
-    private void saveNodes() throws FileIOException {
+    private void saveNodes(final Path outputPath, final CSVFormat aCSVFormat, final boolean aConsiderNeighbors) throws FileIOException {
         while (!openLabelList.isEmpty()) {
-            Label toTreat = openLabelList.remove(0);
+            final Label toTreat = openLabelList.remove(0);
 
-            String content = "";
-
-            try {
-                content = exportLabelToCSV(toTreat);
-            } catch (Neo4jNoResult | Neo4jQueryException e) {
-                log.error("Error trying to save label : ".concat(toTreat.name()), e);
-                MESSAGE_QUEUE.add(new OutputMessage("Error : No nodes found with label : ".concat(toTreat.name())));
-                continue;
-            }
-
-            String filename = NODE_PREFIX.concat(toTreat.name()).concat(EXTENSION);
+            // Compute the name of the output file
+            final String filename = NODE_PREFIX + toTreat.name() + EXTENSION;
+            final File outFile = outputPath.resolve(filename).toFile();
             createdFilenameList.add(filename);
 
-            try (FileWriter writer = new FileWriter(Paths.get(pathParams).resolve(filename).toFile(), true)) {
-                writer.write(content);
-            } catch (Exception e) {
-                throw new FileIOException("Error : Impossible to create/open file with name ".concat(filename), e, "SAVExSAVE01");
+            try (final CSVPrinter printer = new CSVPrinter(new FileWriter(outFile), aCSVFormat)) {
+                exportLabelToCSV(printer, toTreat, aConsiderNeighbors);
+            } catch (Neo4jNoResult | Neo4jQueryException ex) {
+                log.error("Error trying to save label: " + toTreat.name(), ex);
+                MESSAGE_QUEUE.add(new OutputMessage("Error : No nodes found with label : ".concat(toTreat.name())));
+            } catch (IOException ex) {
+                throw new FileIOException("Error: Can't create/open file with name " + filename, ex, "SAVExSAVE01");
             }
-
         }
     }
 
-    public Stream<OutputMessage> save(List<String> labelList,
-                                      String path,
-                                      String zipFileName,
-                                      Boolean saveRelationShip,
-                                      Boolean considerNeighbors) throws ProcedureException{
+    /**
+     * Entrypoint of the exporter
+     *
+     * @param labelList         Labels to write down (initial set)
+     * @param path              Output path (folder)
+     * @param zipFileName       Name of the output ZIP file
+     * @param saveRelationShip  If True, save the relationship in addition to the nodes
+     * @param considerNeighbors If True, analyze neighbors instead of the given labels only
+     * @return The message to output to Neo4J
+     * @throws ProcedureException An error occurred while querying/reading/writing
+     */
+    public Stream<OutputMessage> save(final List<String> labelList,
+                                      final String path,
+                                      final String zipFileName,
+                                      final boolean saveRelationShip,
+                                      final boolean considerNeighbors) throws ProcedureException {
         MESSAGE_QUEUE.clear();
 
-        // Init parameters
-        considerNeighborsParams = considerNeighbors;
-        saveRelationshipParams = saveRelationShip;
-        pathParams = path;
+        // Prepare the output folder
+        final Path outputPath = Paths.get(path);
+        try {
+            Files.createDirectories(outputPath);
+        } catch (FileAlreadyExistsException ignored) {
+            // Folder already there: use it
+        } catch (IOException ex) {
+            throw new ProcedureException("Error creating output folder", ex);
+        }
 
-        // Init members
+        // Initial labels to grab
         openLabelList = labelList.stream().map(Label::label).collect(Collectors.toList());
+
+        // Update the CSVFormat
+        CSVFormat csvFormat = CSVFormat.EXCEL;
+        if(DELIMITER != null && DELIMITER.length() == 1) {
+            csvFormat = csvFormat.withDelimiter(DELIMITER.charAt(0));
+        }
 
         // openTransaction
         try {
-            String targetName = zipFileName.concat(".zip");
+            final String targetName = zipFileName.concat(".zip");
             log.info(String.format("Saving Configuration to %s ...", targetName));
 
             this.tx = db.beginTx();
 
-            saveNodes();
-            if(saveRelationshipParams) saveRelationships();
+            saveNodes(outputPath, csvFormat, considerNeighbors);
+            if (saveRelationShip) {
+                saveRelationships(outputPath, csvFormat);
+            }
 
-            createZip(targetName);
+            createZip(outputPath, outputPath.resolve(targetName));
             MESSAGE_QUEUE.add(new OutputMessage("Saving done"));
 
-            this.tx.commit();
+            // Commit the transaction
+            tx.commit();
 
             return MESSAGE_QUEUE.stream();
         } catch (FileIOException e) {
-            if(this.tx != null) this.tx.rollback();
-            throw new ProcedureException(e);
-        } finally {
-            if(this.tx != null) this.tx.close();
-        }
-
-
-    }
-
-    /**
-     * Smarter conversion of Java object to string (handles arrays)
-     *
-     * @param obj  Any object
-     * @return String representation of the object
-     */
-    public String smartString(Object obj) {
-        if(obj != null && obj.getClass().isArray()) {
-            final StringBuilder builder = new StringBuilder("[");
-            for(int i = 0; i < Array.getLength(obj); i++) {
-                if(i > 0) {
-                    builder.append(", ");
-                }
-                builder.append(smartString(Array.get(obj, i)));
+            if (tx != null) {
+                tx.rollback();
             }
-
-            builder.append("]");
-            return builder.toString();
-        } else {
-            return String.valueOf(obj);
+            throw new ProcedureException(e);
+        } catch (IOException ex) {
+            if (tx != null) {
+                tx.rollback();
+            }
+            throw new ProcedureException(ex.getMessage(), ex);
+        } finally {
+            if (tx != null) {
+                tx.close();
+            }
         }
-    }
-
-
-    public Exporter(GraphDatabaseService db, Log log) {
-        this.db = db;
-        this.log = log;
-
-        this.closedLabelSet = new HashSet<>();
-        this.nodeLabelMap = new HashSet<>();
-        this.createdFilenameList = new HashSet<>();
     }
 }

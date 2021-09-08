@@ -25,6 +25,7 @@ import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
 
 import java.io.*;
+import java.lang.reflect.Array;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -101,7 +102,9 @@ public class Exporter {
      * @param aCSVFormat   Format of the output CSV file
      * @throws FileIOException Error writing file
      */
-    private void saveRelationships(final Transaction aTransaction, final Path aOutPath, final CSVFormat aCSVFormat) throws FileIOException, IOException {
+    private void saveRelationships(
+            final Transaction aTransaction, final Path aOutPath,
+            final CSVFormat aCSVFormat) throws FileIOException, IOException {
 
         // All relations returned by Neo4J
         final List<Relationship> relationships = new LinkedList<>();
@@ -181,7 +184,7 @@ public class Exporter {
                 // Add properties
                 for (final String propName : sortedProps) {
                     try {
-                        csvPrinter.print(rel.getProperty(propName));
+                        csvPrinter.print(normalizeProperty(rel.getProperty(propName)));
                     } catch (NotFoundException ex) {
                         // Property not used here
                         csvPrinter.print(null);
@@ -234,7 +237,10 @@ public class Exporter {
      * @throws Neo4jQueryException Error while querying the database
      * @throws IOException         Error writing down the CSV file
      */
-    private void exportLabelToCSV(final Transaction aTransaction, final CSVPrinter printer, final Label label, final boolean considerNeighbors) throws Neo4jNoResult, Neo4jQueryException, IOException {
+    private void exportLabelToCSV(
+            final Transaction aTransaction, final CSVPrinter printer, final Label label,
+            final boolean considerNeighbors) throws Neo4jNoResult, Neo4jQueryException, IOException {
+
         final Set<String> propertiesSet = new HashSet<>();
         final List<Node> nodeList = new ArrayList<>();
 
@@ -279,7 +285,7 @@ public class Exporter {
             // Print the properties
             for (final String property : sortedProps) {
                 try {
-                    printer.print(node.getProperty(property));
+                    printer.print(normalizeProperty(node.getProperty(property)));
                 } catch (NotFoundException ex) {
                     printer.print(null);
                 }
@@ -294,6 +300,33 @@ public class Exporter {
 
         // Mark the label as visited
         closedLabelSet.add(label);
+    }
+
+    /**
+     * Normalizes the given property value before giving it to the CSV printer
+     *
+     * @param aPropertyValue Value to normalize
+     * @return The property value
+     */
+    private String normalizeProperty(final Object aPropertyValue) {
+        // Keep null as is
+        if (aPropertyValue == null) {
+            return null;
+        } else if (aPropertyValue.getClass().isArray()) {
+            // Special case: arrays
+            final StringBuilder builder = new StringBuilder("[");
+            for (int i = 0; i < Array.getLength(aPropertyValue); i++) {
+                if (i > 0) {
+                    builder.append(", ");
+                }
+                builder.append(normalizeProperty(Array.get(aPropertyValue, i)));
+            }
+            builder.append("]");
+            return builder.toString();
+        } else {
+            // Trim the value
+            return String.valueOf(aPropertyValue);
+        }
     }
 
     /**
@@ -344,7 +377,10 @@ public class Exporter {
      * @param aConsiderNeighbors If true, analyze neighboring nodes
      * @throws FileIOException Error writing file
      */
-    private void saveNodes(final Transaction aTransaction, final Path aOutputPath, final CSVFormat aCSVFormat, final boolean aConsiderNeighbors) throws FileIOException {
+    private void saveNodes(
+            final Transaction aTransaction, final Path aOutputPath, final CSVFormat aCSVFormat,
+            final boolean aConsiderNeighbors) throws FileIOException {
+
         while (!openLabelList.isEmpty()) {
             final Label toTreat = openLabelList.remove(0);
 

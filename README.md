@@ -1,4 +1,20 @@
 # Friendly Exporter for Neo4j (*[@tcalmant's fork](https://github.com/tcalmant/Friendly-Neo4j-Exporter)*)
+
+## About this fork
+
+This repository is a fork of [@Makunda's Friendly-Neo4j-Exporter](https://github.com/Makunda/Friendly-Neo4j-Exporter).
+
+This fork adds the following features:
+* Export is now based on Apache Commons CSV. This ensures to have a valid CSV file as output,
+especially when the exported properties have the field delimiter in their values.
+* Special handling of arrays: they are now exported as a string, as `Arrays.toString()` would do.
+This means that when loaded, the property will be seen as a String.
+* Added the ability to trim the values
+* If no ZIP name is given, the CSV files are kept as is in the output folder
+
+**Note:** This fork only changed the export part of the plugin, as its goal is to export a Neo4J
+database in order to load it into PostgreSQL with the `COPY CSV` statement.
+
 ### Neo4j extension offering a better CSV export than the CSV exporter integrated in Neo4J
 
 ![Folder structure with exporter](folder_structure.png)

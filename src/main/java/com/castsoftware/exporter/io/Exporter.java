@@ -372,6 +372,7 @@ public class Exporter {
      * @param zipFileName       Name of the output ZIP file
      * @param saveRelationShip  If True, save the relationship in addition to the nodes
      * @param considerNeighbors If True, analyze neighbors instead of the given labels only
+     * @param trimValues        If True, remove space characters around properties
      * @return The message to output to Neo4J
      * @throws ProcedureException An error occurred while querying/reading/writing
      */
@@ -379,7 +380,8 @@ public class Exporter {
                                       final String path,
                                       final String zipFileName,
                                       final boolean saveRelationShip,
-                                      final boolean considerNeighbors) throws ProcedureException {
+                                      final boolean considerNeighbors,
+                                      final boolean trimValues) throws ProcedureException {
         MESSAGE_QUEUE.clear();
 
         // Prepare the output folder
@@ -399,6 +401,9 @@ public class Exporter {
         CSVFormat csvFormat = CSVFormat.EXCEL;
         if (DELIMITER != null && DELIMITER.length() == 1) {
             csvFormat = csvFormat.withDelimiter(DELIMITER.charAt(0));
+        }
+        if (trimValues) {
+            csvFormat = csvFormat.withTrim();
         }
 
         // openTransaction

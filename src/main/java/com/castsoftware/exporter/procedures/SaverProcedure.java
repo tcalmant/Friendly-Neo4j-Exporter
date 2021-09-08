@@ -56,8 +56,9 @@ public class SaverProcedure {
                                                @Name(value = "Path") String path,
                                                @Name(value = "ZipFileName", defaultValue = "export") String zipFileName,
                                                @Name(value = "SaveRelationship", defaultValue = "true") boolean saveRelationShip,
-                                               @Name(value = "ConsiderNeighbors", defaultValue = "false") boolean considerNeighbors) throws ProcedureException {
+                                               @Name(value = "ConsiderNeighbors", defaultValue = "false") boolean considerNeighbors,
+                                               @Name(value = "TrimValues", defaultValue = "true") boolean trimValues) throws ProcedureException {
         final Exporter exporter = new Exporter(db, log);
-        return exporter.save(labelList, path, zipFileName, saveRelationShip, considerNeighbors);
+        return exporter.save(labelList, path, zipFileName, saveRelationShip, considerNeighbors, trimValues);
     }
 }

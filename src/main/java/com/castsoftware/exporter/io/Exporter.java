@@ -38,19 +38,19 @@ import java.util.zip.ZipOutputStream;
 
 public class Exporter {
 
+    // Default properties
+    private final String DELIMITER = IOProperties.Property.CSV_DELIMITER.toString(); // ; | , | space
+    private final String EXTENSION = IOProperties.Property.CSV_EXTENSION.toString(); // .csv
+    private final String INDEX_COL = IOProperties.Property.INDEX_COL.toString(); // Id
+    private final String INDEX_OUTGOING = IOProperties.Property.INDEX_OUTGOING.toString(); // Source
+    private final String INDEX_INCOMING = IOProperties.Property.INDEX_INCOMING.toString(); // Destination
+    private final String RELATIONSHIP_PREFIX = IOProperties.Property.PREFIX_RELATIONSHIP_FILE.toString(); // relationship
+    private final String NODE_PREFIX = IOProperties.Property.PREFIX_NODE_FILE.toString(); // node
+
     /**
      * Output message queue
      */
-    private static final List<OutputMessage> MESSAGE_QUEUE = new ArrayList<>();
-
-    // Default properties
-    private static final String DELIMITER = IOProperties.Property.CSV_DELIMITER.toString(); // ; | , | space
-    private static final String EXTENSION = IOProperties.Property.CSV_EXTENSION.toString(); // .csv
-    private static final String INDEX_COL = IOProperties.Property.INDEX_COL.toString(); // Id
-    private static final String INDEX_OUTGOING = IOProperties.Property.INDEX_OUTGOING.toString(); // Source
-    private static final String INDEX_INCOMING = IOProperties.Property.INDEX_INCOMING.toString(); // Destination
-    private static final String RELATIONSHIP_PREFIX = IOProperties.Property.PREFIX_RELATIONSHIP_FILE.toString(); // relationship
-    private static final String NODE_PREFIX = IOProperties.Property.PREFIX_NODE_FILE.toString(); // node
+    private final List<OutputMessage> MESSAGE_QUEUE = new ArrayList<>();
 
     /**
      * Access to Neo4J DB

@@ -37,9 +37,10 @@ public class SaverProcedure {
     }
 
     /**
-     * Neo4 Procedure entry point for "fexporter.save()". See Neo4j documentation for more information.
+     * Neo4 Procedure entry point for <code>fexporter.save()</code>.
+     * See Neo4j documentation for more information.
      *
-     * @throws ProcedureException
+     * @throws ProcedureException Error Running the command
      * @Description("fexporter.save(LabelsToSave, Path, ZipFileName, SaveRelationship, ConsiderNeighbors) - Save labels to CSV file format. \n" +
      * "Parameters : \n" +
      * "               - @LabelsToSave- <String List> - Labels to save, as a list of string. Ex : [\"C_relationship\", \"F_FrameworkRule\"] " +
@@ -48,7 +49,9 @@ public class SaverProcedure {
      * "               - @SaveRelationship - <Boolean> - Save relationships associated to the labels selected. If the option @ConsiderNeighbors is active, relationships involving neighbors' label will also be saved in the process" +
      * "               - @ConsiderNeighbors - <Boolean> - Consider the neighbors of selected labels. If a node in the provided label list has a relationship with another node from a different label, this label will also be saved. " +
      * "                                                  This option does not necessitate the activation of @SaveRelationship to work, but it is strongly recommended to keep the report consistent." +
-     * "Example of use : CALL fexporter.save([\"C_relationship\", \"F_FrameworkRule\"], \"C:/Neo4j_exports/\", \"MyReport\", true, true )" +
+     * "               - @TrimValues - <Boolean> - If set (default), trim the property names and values " +
+     * "               - @Delimiter - <String> - The delimiter to use in the output CSV
+     * "Example of use : CALL fexporter.save([\"C_relationship\", \"F_FrameworkRule\"], \"C:/Neo4j_exports/\", \"MyReport\", true, true, true, \";\")" +
      * "")
      **/
     @Procedure(value = "fexporter.save", mode = Mode.WRITE)
@@ -57,8 +60,9 @@ public class SaverProcedure {
                                                @Name(value = "ZipFileName", defaultValue = "export") String zipFileName,
                                                @Name(value = "SaveRelationship", defaultValue = "true") boolean saveRelationShip,
                                                @Name(value = "ConsiderNeighbors", defaultValue = "false") boolean considerNeighbors,
-                                               @Name(value = "TrimValues", defaultValue = "true") boolean trimValues) throws ProcedureException {
+                                               @Name(value = "TrimValues", defaultValue = "true") boolean trimValues,
+                                               @Name(value = "Delimiter", defaultValue = "") String delimiter) throws ProcedureException {
         final Exporter exporter = new Exporter(db, log);
-        return exporter.save(labelList, path, zipFileName, saveRelationShip, considerNeighbors, trimValues);
+        return exporter.save(labelList, path, zipFileName, saveRelationShip, considerNeighbors, trimValues, delimiter);
     }
 }

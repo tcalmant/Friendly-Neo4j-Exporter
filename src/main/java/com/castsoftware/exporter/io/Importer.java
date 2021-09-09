@@ -19,10 +19,18 @@ import com.castsoftware.exporter.exceptions.ProcedureException;
 import com.castsoftware.exporter.exceptions.file.FileCorruptedException;
 import com.castsoftware.exporter.exceptions.neo4j.Neo4jQueryException;
 import com.castsoftware.exporter.results.OutputMessage;
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
 import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
 
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.OffsetTime;
@@ -30,121 +38,182 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 public class Importer {
 
-    // Return message queue
-    private static final List<OutputMessage> MESSAGE_QUEUE = new ArrayList<>();
-
     // Default values ( Should be added to a property file )
-    private static final String DELIMITER = IOProperties.Property.CSV_DELIMITER.toString();
-    private static final String EXTENSION = IOProperties.Property.CSV_EXTENSION.toString();
-    private static final String INDEX_COL = IOProperties.Property.INDEX_COL.toString();
-    private static final String INDEX_OUTGOING = IOProperties.Property.INDEX_OUTGOING.toString();
-    private static final String INDEX_INCOMING = IOProperties.Property.INDEX_INCOMING.toString();
-    private static final String RELATIONSHIP_PREFIX = IOProperties.Property.PREFIX_RELATIONSHIP_FILE.toString();
-    private static final String NODE_PREFIX = IOProperties.Property.PREFIX_NODE_FILE.toString();
-
-    // Members
-    private Long countLabelCreated;
-    private Long countRelationTypeCreated;
-    private Long ignoredFile;
-    private Long nodeCreated;
-    private Long relationshipCreated;
-
-    // Binding map between csv ID and Neo4j created nodes. Only the Node id is stored here, to limit the usage of heap memory.
-    private Map<Long, Long> idBindingMap;
-
-    private GraphDatabaseService db;
-    private Log log;
-    private Transaction tx;
+    private final String DELIMITER = IOProperties.Property.CSV_DELIMITER.toString();
+    private final String EXTENSION = IOProperties.Property.CSV_EXTENSION.toString();
+    private final String INDEX_COL = IOProperties.Property.INDEX_COL.toString();
+    private final String INDEX_OUTGOING = IOProperties.Property.INDEX_OUTGOING.toString();
+    private final String INDEX_INCOMING = IOProperties.Property.INDEX_INCOMING.toString();
+    private final String RELATIONSHIP_PREFIX = IOProperties.Property.PREFIX_RELATIONSHIP_FILE.toString();
+    private final String NODE_PREFIX = IOProperties.Property.PREFIX_NODE_FILE.toString();
 
     /**
-     * Convert a String containing a Neo4j Type to a Java Type
-     * Handled type are : Boolean, Char, Byte, Short, Long, Double, LocalDate, OffsetTime, LocalTime, ZoneDateTime.
+     * Output message queue
+     */
+    private final List<OutputMessage> MESSAGE_QUEUE = new ArrayList<>();
+
+    /**
+     * Neo4J database
+     */
+    private final GraphDatabaseService db;
+
+    /**
+     * Neo4J logger
+     */
+    private final Log log;
+
+    /**
+     * Binding map between csv ID and Neo4j created nodes.
+     * Only the Node id is stored here, to limit the usage of heap memory.
+     */
+    private final Map<Long, Long> idBindingMap = new LinkedHashMap<>();
+
+    /**
+     * Number of labels we created
+     */
+    private long countLabelCreated;
+
+    /**
+     * Number of relation types we created
+     */
+    private long countRelationTypeCreated;
+
+    /**
+     * Number of files ingnored in the Zip file
+     */
+    private long ignoredFile;
+
+    /**
+     * Number of nodes created
+     */
+    private long nodeCreated;
+
+    /**
+     * Number of relations created
+     */
+    private long relationshipCreated;
+
+    /**
+     * Sets up the importer
+     *
+     * @param db  Access to the database
+     * @param log Access to the logger
+     */
+    public Importer(final GraphDatabaseService db, final Log log) {
+        this.db = db;
+        this.log = log;
+
+        // Init members
+        countLabelCreated = 0L;
+        countRelationTypeCreated = 0L;
+        ignoredFile = 0L;
+        nodeCreated = 0L;
+        relationshipCreated = 0L;
+    }
+
+    /**
+     * Convert a String containing a Neo4j Type to a Java Type.
+     * Handled type are: <code>Boolean, Char, Long, Double, LocalDate, OffsetTime, LocalTime, ZoneDateTime</code>.
+     * <p>
      * If none of these types are detected, it will return the value as a String.
-     * <u>Warning :</u> TemporalAmount and org.neo4j.graphdb.spatial.Point are not detected
-     * Check https://neo4j.com/docs/java-reference/current/java-embedded/property-values/index.html for more informations
-     * <u>Warning :</u> The goal of this function is to reassign the correct Java type to the value discovered in the CSV. It mays detect the wrong type.
+     * <p>
+     * <strong>Warning:</strong> <code>TemporalAmount</code> and <code>org.neo4j.graphdb.spatial.Point</code> are not detected
+     * Check <a href="https://neo4j.com/docs/java-reference/current/java-embedded/property-values/index.html for more information">Neo4J property values documentation</a>
+     * </p>
+     * <p>
+     * <strong>Warning:</strong> The goal of this function is to reassign the correct Java type to the value discovered in the CSV. It mays detect the wrong type.
+     * </p>
      *
      * @param value Neo4j Value as a string
      * @return Object of the Java Type associated to the discovered type within the string provided
      */
-    private Object getNeo4jType(String value) {
+    private Object getNeo4jType(final String value) {
 
-        // Integer
-        try { return Integer.parseInt(value); } catch (NumberFormatException ignored) { }
-        // Byte
-        try { return Byte.parseByte(value); } catch (NumberFormatException ignored) { }
-        // Short
-        try { return Short.parseShort(value); } catch (NumberFormatException ignored) { }
         // Long
-        try { return Long.parseLong(value); } catch (NumberFormatException ignored) { }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ignored) {
+        }
+
         // Double
-        try { return Double.parseDouble(value); } catch (NumberFormatException ignored) { }
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException ignored) {
+        }
 
         // Boolean
-        if(value.toLowerCase().matches("true|false")) {
+        if (value.toLowerCase().matches("true|false")) {
             return Boolean.parseBoolean(value);
         }
 
-        // DateTimeFormatter covering all Neo4J Date Format  (cf : https://neo4j.com/docs/cypher-manual/current/syntax/temporal/ )
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("[YYYY-MM-DD]" +
-                "[YYYYMMDD]" +
-                "[YYYY-MM]" +
-                "[YYYYMM]" +
-                "[YYYY-Www-D]" +
-                "[YYYY- W ww]" +
-                "[YYYY W ww]" +
-                "[YYYY- Q q-DD]" +
-                "[YYYY Q q]" +
-                "[YYYY-DDD]" +
-                "[YYYYDDD]" +
-                "[YYYY]");
+        // DateTimeFormatter covering all Neo4J Date Format
+        // (cf: https://neo4j.com/docs/cypher-manual/current/syntax/temporal/)
+        // FIXME: quarter and week base ones are wrong
+        final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("[yyyy-MM-dd]" +
+                "[yyyyMMdd]" +
+                "[yyyy-MM]" +
+                "[yyyyMM]" +
+                "[YYYY-'W'ww-D]" +
+                "[YYYY-'W'wwD]" +
+                "[YYYY-'W'ww]" +
+                "[YYYY'W'ww]" +
+                "[YYYY-'Q'Q-DD]" +
+                "[YYYY-'Q'q]" +
+                "[YYYY'Q'q]" +
+                "[yyyy-DDD]" +
+                "[yyyyDDD]" +
+                "[yyyy]");
 
         // LocalDate
-        try { return LocalDate.parse(value, formatter); } catch (DateTimeParseException ignored) { }
+        try {
+            return LocalDate.parse(value, formatter);
+        } catch (DateTimeParseException ignored) {
+        }
+
         // OffsetTime
-        try { return OffsetTime.parse(value, formatter); } catch (DateTimeParseException ignored) { }
+        try {
+            return OffsetTime.parse(value, formatter);
+        } catch (DateTimeParseException ignored) {
+        }
+
         // LocalTime
-        try { return LocalTime.parse(value, formatter); } catch (DateTimeParseException ignored) { }
+        try {
+            return LocalTime.parse(value, formatter);
+        } catch (DateTimeParseException ignored) {
+        }
+
         // ZoneDateTime
-        try { return ZonedDateTime.parse(value, formatter); } catch (DateTimeParseException ignored) { }
+        try {
+            return ZonedDateTime.parse(value, formatter);
+        } catch (DateTimeParseException ignored) {
+        }
 
         // Char
-        if (value.length() == 1) return value.charAt(0);
+        if (value.length() == 1) {
+            return value.charAt(0);
+        }
 
         // Remove Sanitization
-        value = value.replaceAll("(^\\s\")|(\\s\"\\s?$)", "");
+        final String sanitized = value.replaceAll("(^\\s\")|(\\s\"\\s?$)", "");
 
-        log.info("Value inserted : " + value);
+        log.info("Value inserted: " + sanitized);
         // String
-        return value;
-    }
-
-    /**
-     * Remove EOL token and split the row to List<String>
-     * @param input CVS row to sanitize
-     * @return Sanitized string
-     */
-    private List<String> sanitizeCSVInput(String input) {
-        // Split using delimiters. Ignore delimiter surrounded by quotations marks.
-        return Arrays
-                .asList(input.replaceAll("\\\\r\\\\n", "")
-                        .split(DELIMITER + "(?=(?:[^\\\"]*\\\"[^\\\"]*\\\")*[^\\\"]*$)"));
+        return sanitized;
     }
 
     /**
      * Get the label stored within the filename by removing the prefix and the extension
-     * @param filename
-     * @return
+     *
+     * @param filename Name of the input file
+     * @return The name of the Label
      */
-    private String getLabelFromFilename(String filename) {
+    private String getLabelFromFilename(final String filename) {
         return filename.replace(RELATIONSHIP_PREFIX, "")
                 .replace(NODE_PREFIX, "")
                 .replace(EXTENSION, "");
@@ -152,159 +221,240 @@ public class Importer {
 
     /**
      * Create a Node based on provided header and values.
-     * If a value is empty, it will not be added as a property to the node.
-     * To make the com.castsoftware.exporter more generic, the conversion from CSV values to Java Values does not necessitate POJOs object.
-     * However, the drawback is that this conversion can create some errors. @see Loader.getNeo4jType() for more information.
-     * @param label Label that will be give to the node
-     * @param headers Headers as a list of String
-     * @param values Values as a list of String
+     * <p>
+     * If a value is empty, it won't be added as a property to the node.
+     * <p>
+     * To make the <code>com.castsoftware.exporter</code> more generic, the conversion from CSV
+     * values to Java Values does not necessitate POJOs object.
+     * However, the drawback is that this conversion can create some errors.
+     * See {@link #getNeo4jType(String)} for more information.
+     *
+     * @param aTx     Current transaction
+     * @param aLabel  Label that will be given to the node
+     * @param aRecord Record as parsed from the CSV file
      */
-    private void createNode(Label label, List<String> headers, List<String> values) throws Neo4jQueryException {
-        int indexCol = headers.indexOf(INDEX_COL);
-        Long id = Long.parseLong(values.get(indexCol));
+    private void createNode(final Transaction aTx, final Label aLabel, final CSVRecord aRecord)
+            throws Neo4jQueryException {
+        // Get the node ID
+        final long id = Long.parseLong(aRecord.get(INDEX_COL));
 
         try {
-            Node n = this.tx.createNode(label);
+            final Node node = aTx.createNode(aLabel);
 
-            int minSize = Math.min(values.size(), headers.size());
-            for (int i = 0; i < minSize; i++) {
-                if (i == indexCol || values.get(i).isEmpty()) continue; // Index col or empty value
-                Object extractedVal = getNeo4jType(values.get(i));
-                n.setProperty(headers.get(i), extractedVal);
+            for (final Map.Entry<String, String> pair : aRecord.toMap().entrySet()) {
+                final String propName = pair.getKey();
+                if (INDEX_COL.equals(propName)) {
+                    // Ignore the index column
+                    continue;
+                }
+
+                // Ignore empty values
+                final String propValue = pair.getValue();
+                if (propValue.isEmpty()) {
+                    continue;
+                }
+
+                // Parse the string
+                final Object parsedValue = getNeo4jType(propValue);
+                node.setProperty(propName, parsedValue);
             }
 
-            nodeCreated ++;
-            idBindingMap.put(id, n.getId()); // We need to keep a track of the csv id to bind node together later
+            nodeCreated++;
+
+            // We need to keep a track of the CSV ID to bind nodes together later
+            idBindingMap.put(id, node.getId());
         } catch (Exception e) {
             throw new Neo4jQueryException("Node creation failed.", e, "IMPOxCREN01");
         }
-
     }
 
     /**
-     * Create a relationship between two node. Source node ID and Destination node must be specified in the header and the value list.
-     * If one of these information is missing the relationship will be ignored.
-     * @param relationshipType The name of the relationship
-     * @param headers List containing the value of the header
-     * @param values List containing the value of the relationship
+     * Creates a relationship between two node.
+     * <p>
+     * Source node ID and Destination node must be specified in the header and the value list.
+     * If this information is missing, the relationship will be ignored.
+     *
+     * @param aTx               Current transaction
+     * @param aRelationshipType The name of the relationship
+     * @param aRecord           Parsed CSV record
      */
-    private void createRelationship(RelationshipType relationshipType, List<String> headers, List<String> values) throws Neo4jQueryException {
-        int indexOutgoing = headers.indexOf(INDEX_OUTGOING);
-        Long idOutgoing = Long.parseLong(values.get(indexOutgoing));
+    private void createRelationship(
+            final Transaction aTx,
+            final RelationshipType aRelationshipType,
+            final CSVRecord aRecord) throws Neo4jQueryException {
 
-        int indexIncoming = headers.indexOf(INDEX_INCOMING);
-        Long idIncoming = Long.parseLong(values.get(indexIncoming));
+        final Long idOutgoing = Long.parseLong(aRecord.get(INDEX_OUTGOING));
+        final Long idIncoming = Long.parseLong(aRecord.get(INDEX_INCOMING));
+        final Long srcNodeId = idBindingMap.get(idOutgoing);
+        final Long destNodeId = idBindingMap.get(idIncoming);
 
-        Long srcNodeId = idBindingMap.get(idOutgoing);
-        Long destNodeId = idBindingMap.get(idIncoming);
+        if (srcNodeId == null || destNodeId == null) {
+            // Ignore this relationship, at least one node is missing
+            return;
+        }
 
-        if( srcNodeId == null || destNodeId == null) return; // Ignore this relationship, at least one node is missing
-
-        Node srcNode = null;
-        Node destNode = null;
-
+        // Get the Neo4J nodes
+        final Node srcNode;
+        final Node destNode;
         try {
-            srcNode = this.tx.getNodeById(srcNodeId);
-            destNode = this.tx.getNodeById(destNodeId);
+            srcNode = aTx.getNodeById(srcNodeId);
+            destNode = aTx.getNodeById(destNodeId);
         } catch (Exception e) {
             throw new Neo4jQueryException("Impossible to retrieve Dest/Src Node.", e, "IMPOxCRER01");
         }
 
-        Relationship rel = srcNode.createRelationshipTo(destNode, relationshipType);
+        // Get the Neo4J relationship
+        final Relationship rel = srcNode.createRelationshipTo(destNode, aRelationshipType);
 
-        int minSize = Math.min(values.size(), headers.size());
-        for (int i = 0; i < minSize; i++) {
-            if (i == indexOutgoing || i == indexIncoming || values.get(i).isEmpty()) continue; // Index col or empty value
-            Object extractedVal = getNeo4jType(values.get(i));
-            rel.setProperty(headers.get(i), extractedVal);
+        for (final Map.Entry<String, String> pair : aRecord.toMap().entrySet()) {
+            final String propName = pair.getKey();
+            if (INDEX_INCOMING.equals(propName) || INDEX_OUTGOING.equals(propName)) {
+                // Ignore the index columns
+                continue;
+            }
+
+            // Ignore empty values
+            final String propValue = pair.getValue();
+            if (propValue.isEmpty()) {
+                continue;
+            }
+
+            // Parse the string
+            final Object parsedValue = getNeo4jType(propValue);
+            rel.setProperty(propName, parsedValue);
         }
 
         relationshipCreated++;
-
     }
 
     /**
      * Treat a node buffer by extracting the first row as a list of header value. Treat all the other rows as list of node's values.
+     *
+     * @param aTx             Current transaction
      * @param associatedLabel Name of the label
-     * @param nodeFileBuf BufferReader pointing to the node file
-     * @throws IOException thrown if the procedure fails to read the buffer
+     * @param nodeFileReader  BufferReader pointing to the node file
+     * @param aCsvFormat      Format of the input CSV
+     * @throws IOException            thrown if the procedure fails to read the buffer
      * @throws FileCorruptedException thrown if the file isn't in a good format ( If the headers are missing, or if it does not contains any Index Column)
      */
-    private void treatNodeBuffer(String associatedLabel, BufferedReader nodeFileBuf) throws IOException, FileCorruptedException {
-        String line;
-        String headers = nodeFileBuf.readLine();
-        if (headers == null) throw new FileCorruptedException("No header found in file.", "LOADxTNBU01");
+    private void treatNodeBuffer(
+            final Transaction aTx, final String associatedLabel,
+            final BufferedReader nodeFileReader, final CSVFormat aCsvFormat)
+            throws IOException, FileCorruptedException {
 
-        Label label = Label.label(associatedLabel);
+        try (final CSVParser parser = new CSVParser(nodeFileReader, aCsvFormat)) {
+            // Get the header
+            final List<String> headerList = parser.getHeaderNames();
+            if (headerList.isEmpty()) {
+                throw new FileCorruptedException("No header found in file.", "LOADxTNBU01");
+            }
 
-        //Process header line
-        List<String> headerList = sanitizeCSVInput(headers);
-        if (!headerList.contains(INDEX_COL))
-            throw new FileCorruptedException("No index column found in file.", "LOADxTNBU02");
+            //Process header line
+            if (!headerList.contains(INDEX_COL)) {
+                throw new FileCorruptedException("No index column found in file.", "LOADxTNBU02");
+            }
 
-        while ((line = nodeFileBuf.readLine()) != null) {
-            List<String> values = sanitizeCSVInput(line);
-            try {
-                createNode(label, headerList, values);
-            } catch (Exception | Neo4jQueryException e) {
-                log.error("An error occurred during creation of node with label : ".concat(associatedLabel).concat(" and values : ").concat(String.join(DELIMITER, values)), e);
+            // Prepare the label
+            final Label label = Label.label(associatedLabel);
+
+            // Load the CSV file
+            for (final CSVRecord row : parser) {
+                try {
+                    createNode(aTx, label, row);
+                } catch (Exception | Neo4jQueryException e) {
+                    log.error("An error occurred during creation of node with label: "
+                            + associatedLabel + " and values: " + row.toMap(), e);
+                }
             }
         }
     }
 
     /**
-     * Treat a relationship buffer by extracting the first row as a list of header value. Treat all the other rows as list of relationship's values.
+     * Treat a relationship buffer by extracting the first row as a list of header value.
+     * Treat all the other rows as list of relationship's values.
+     *
+     * @param aTx                Current transaction
      * @param associatedRelation Name of the relationship
-     * @param relFileBuf BufferReader pointing to the relationship file
-     * @throws IOException thrown if the procedure fails to read the buffer
-     * @throws FileCorruptedException thrown if the file isn't in a good format ( If the headers are missing, or if it does not contains any Source or Destination index column)
+     * @param relFileReader      BufferReader pointing to the relationship file
+     * @param aCsvFormat         Format of the input CSV file
+     * @throws IOException            thrown if the procedure fails to read the buffer
+     * @throws FileCorruptedException thrown if the file isn't in a good format
+     *                                (If the headers are missing, or if it does not contain
+     *                                any Source or Destination index column)
      */
-    private void treatRelBuffer(String associatedRelation, BufferedReader relFileBuf) throws IOException, FileCorruptedException, Neo4jQueryException {
-        String line;
-        String headers = relFileBuf.readLine();
-        if (headers == null) throw new FileCorruptedException("No header found in file.", "LOADxTNBU01");
+    private void treatRelBuffer(
+            final Transaction aTx,
+            final String associatedRelation,
+            final BufferedReader relFileReader,
+            final CSVFormat aCsvFormat) throws IOException, FileCorruptedException, Neo4jQueryException {
 
-        RelationshipType relName = RelationshipType.withName(associatedRelation);
+        try (final CSVParser parser = new CSVParser(relFileReader, aCsvFormat)) {
+            // Get the header
+            final List<String> headerList = parser.getHeaderNames();
+            if (headerList.isEmpty()) {
+                throw new FileCorruptedException("No header found in file.", "LOADxTNBU01");
+            }
 
-        List<String> headerList = sanitizeCSVInput(headers);
-        if (!headerList.contains(INDEX_OUTGOING) || !headerList.contains(INDEX_INCOMING))
-            throw new FileCorruptedException("Corrupted header (missing source or destination columns).", "LOADxTNBU02");
+            if (!headerList.contains(INDEX_OUTGOING) || !headerList.contains(INDEX_INCOMING)) {
+                // Missing headers
+                throw new FileCorruptedException(
+                        "Corrupted header (missing source or destination columns).",
+                        "LOADxTNBU02");
+            }
 
-        while ((line = relFileBuf.readLine()) != null) {
-            List<String> values = sanitizeCSVInput(line);
-            createRelationship(relName, headerList, values);
+            // Prepare the relationship
+            final RelationshipType relationship = RelationshipType.withName(associatedRelation);
+
+            // Load the CSV file
+            for (final CSVRecord row : parser) {
+                createRelationship(aTx, relationship, row);
+            }
         }
-
     }
 
     /**
-     * Parse all files within zip file. For each file a BufferedReader will be open and stored as a Node BufferReader or a Relationship BufferReader.
-     * The procedure will use the prefix in the filename to decide if it must be treated as a file containing node or relationships.
-     * @param file The Zip file to be treated
-     * @throws IOException
+     * Parse all files within zip file.
+     * <p>
+     * For each file a BufferedReader will be open and stored as a Node BufferReader or
+     * a Relationship BufferReader.
+     * The procedure will use the prefix in the filename to decide if it must be treated as
+     * a file containing node or relationships.
+     *
+     * @param tx         Current transaction
+     * @param zipPath    The Zip file to be treated
+     * @param aCsvFormat Format of the input CSV files
+     * @throws IOException         Error reading the ZIP file
+     * @throws Neo4jQueryException Error creating the nodes/relationships
      */
-    private void parseZip(File file) throws IOException, Neo4jQueryException {
-        Map<BufferedReader, String> nodeBuffers = new HashMap<>();
-        Map<BufferedReader, String> relBuffers = new HashMap<>();
+    private void parseZip(final Transaction tx, final Path zipPath, final CSVFormat aCsvFormat) throws IOException, Neo4jQueryException {
+        final Map<BufferedReader, String> nodeBuffers = new LinkedHashMap<>();
+        final Map<BufferedReader, String> relBuffers = new LinkedHashMap<>();
 
-        try (ZipFile zf = new ZipFile(file)) {
-            Enumeration entries = zf.entries();
-
+        try (final ZipFile zf = new ZipFile(zipPath.toFile())) {
+            final Enumeration<? extends ZipEntry> entries = zf.entries();
             while (entries.hasMoreElements()) {
-                ZipEntry ze = (ZipEntry) entries.nextElement();
-                String filename = ze.getName();
-                if (ze.getSize() < 0) continue; // Empty entry
+                final ZipEntry zipEntry = entries.nextElement();
+                final String filename = zipEntry.getName();
+                if (zipEntry.getSize() < 0) {
+                    // Invalid entry (unknown uncompressed size)
+                    continue;
+                }
+
+                if (!filename.endsWith(EXTENSION) ||
+                        !(filename.startsWith(RELATIONSHIP_PREFIX)) || filename.startsWith(NODE_PREFIX)) {
+                    // Filter out files we don't know
+                    ignoredFile++;
+                    log.error(String.format("Unrecognized file with name '%s' in zip file. Skipped.", filename));
+                    continue;
+                }
 
                 try {
-                    BufferedReader br = new BufferedReader(new InputStreamReader(zf.getInputStream(ze)));
-
+                    // Open a buffered reader for this file
+                    final BufferedReader br = new BufferedReader(new InputStreamReader(zf.getInputStream(zipEntry)));
                     if (filename.startsWith(RELATIONSHIP_PREFIX)) {
                         relBuffers.put(br, filename);
                     } else if (filename.startsWith(NODE_PREFIX)) {
                         nodeBuffers.put(br, filename);
-                    } else {
-                        ignoredFile++;
-                        log.error(String.format("Unrecognized file with name '%s' in zip file. Skipped.", filename));
                     }
                 } catch (Exception e) {
                     log.error("An error occurred trying to process entry with file name ".concat(filename), e);
@@ -312,61 +462,145 @@ public class Importer {
                 }
             }
 
+            // Load the data
+            loadData(tx, aCsvFormat, nodeBuffers, relBuffers);
+        }
+    }
+
+    /**
+     * Loads a folder containing CSV files
+     *
+     * @param aTx         Current transaction
+     * @param aFolderPath Input folder
+     * @param aCsvFormat  CSV format of the input files
+     * @throws IOException         Error reading files
+     * @throws Neo4jQueryException Error creating the nodes/relationships
+     */
+    private void loadFolder(final Transaction aTx, final Path aFolderPath, final CSVFormat aCsvFormat) throws IOException, Neo4jQueryException {
+
+        final Map<BufferedReader, String> nodeBuffers = new LinkedHashMap<>();
+        final Map<BufferedReader, String> relBuffers = new LinkedHashMap<>();
+        final List<Path> erroneous = new LinkedList<>();
+
+        Files.list(aFolderPath).filter((path) -> {
+            final String filename = path.getFileName().toString();
+            return filename.endsWith(EXTENSION) &&
+                    (filename.startsWith(RELATIONSHIP_PREFIX) || filename.startsWith(NODE_PREFIX));
+        }).forEach((path) -> {
+            try {
+                final BufferedReader br = Files.newBufferedReader(path);
+                final String filename = path.getFileName().toString();
+                if (filename.startsWith(RELATIONSHIP_PREFIX)) {
+                    relBuffers.put(br, filename);
+                } else if (filename.startsWith(NODE_PREFIX)) {
+                    nodeBuffers.put(br, filename);
+                }
+            } catch (IOException ex) {
+                erroneous.add(path);
+                MESSAGE_QUEUE.add(new OutputMessage("Error opening file: " + path + " - " + ex));
+            }
+        });
+
+        if (erroneous.isEmpty()) {
+            // All files were opened, load the data
+            loadData(aTx, aCsvFormat, nodeBuffers, relBuffers);
+        }
+    }
+
+    /**
+     * Loads data from the given readers and closes them once done or in case of an error
+     *
+     * @param aTx         Current transaction
+     * @param aCsvFormat  Format of the input CSV files
+     * @param nodeBuffers Opened buffers for the nodes
+     * @param relBuffers  Opened buffers for the relations
+     * @throws IOException         Error reading files
+     * @throws Neo4jQueryException Error creating nodes/relations
+     */
+    private void loadData(
+            final Transaction aTx,
+            final CSVFormat aCsvFormat,
+            final Map<BufferedReader, String> nodeBuffers,
+            final Map<BufferedReader, String> relBuffers) throws IOException, Neo4jQueryException {
+
+        try {
             // Treat nodes in a first time, to fill the idBindingMap for relationships
-            for(Map.Entry<BufferedReader, String> pair : nodeBuffers.entrySet()) {
+            for (final Map.Entry<BufferedReader, String> pair : nodeBuffers.entrySet()) {
+                final String filename = pair.getValue();
                 try {
-                    String labelAsString = getLabelFromFilename(pair.getValue());
-                    treatNodeBuffer(labelAsString, pair.getKey());
+                    final String labelAsString = getLabelFromFilename(filename);
+                    treatNodeBuffer(aTx, labelAsString, pair.getKey(), aCsvFormat);
                     countLabelCreated++;
                 } catch (FileCorruptedException e) {
-                    log.error("The file".concat(pair.getValue()).concat(" seems to be corrupted. Skipped."));
+                    log.error("The file" + filename + " seems to be corrupted. Skipped.");
                     ignoredFile++;
                 }
             }
 
-            for(Map.Entry<BufferedReader, String> pair : relBuffers.entrySet()) {
+            for (final Map.Entry<BufferedReader, String> pair : relBuffers.entrySet()) {
+                final String filename = pair.getValue();
                 try {
-                    String relAsString = getLabelFromFilename(pair.getValue());
-                    treatRelBuffer(relAsString, pair.getKey());
+                    final String relAsString = getLabelFromFilename(filename);
+                    treatRelBuffer(aTx, relAsString, pair.getKey(), aCsvFormat);
                     countRelationTypeCreated++;
                 } catch (FileCorruptedException e) {
-                    log.error("The file".concat(pair.getValue()).concat(" seems to be corrupted. Skipped."));
+                    log.error("The file " + filename + " seems to be corrupted. Skipped.");
                     ignoredFile++;
                 } catch (Neo4jQueryException e) {
                     log.error("Operation failed, check the stack trace for more information.");
                     throw e;
                 }
             }
-
         } finally {
-            // Close bufferedReader
-            for(BufferedReader bf : nodeBuffers.keySet()) bf.close();
-            for(BufferedReader bf : relBuffers.keySet()) bf.close();
+            // Close readers
+            for (final BufferedReader bf : nodeBuffers.keySet()) {
+                bf.close();
+            }
+
+            for (final BufferedReader bf : relBuffers.keySet()) {
+                bf.close();
+            }
         }
     }
 
-
-    public Stream<OutputMessage> load(String pathToZipFileName) throws ProcedureException {
+    /**
+     * Entrypoint: load the given CSV files (from a Zip file or a folder)
+     *
+     * @param zipOrFolderName Name of the Zip file or folder containing the CSV files
+     * @return Messages to output to the user
+     * @throws ProcedureException Error loading the data
+     */
+    public Stream<OutputMessage> load(final String zipOrFolderName) throws ProcedureException {
         MESSAGE_QUEUE.clear();
 
-        try  {
-            this.tx = this.db.beginTx();
-            File zipFile = new File(pathToZipFileName);
+        // Prepare the CSV format
+        CSVFormat csvFormat = CSVFormat.EXCEL;
+        if (DELIMITER != null && DELIMITER.length() == 1) {
+            csvFormat = csvFormat.withDelimiter(DELIMITER.charAt(0));
+        }
 
-            // End the procedure if the path specified isn't valid
-            if (!zipFile.exists()) {
-                MESSAGE_QUEUE.add(new OutputMessage("No zip file found at path ".concat(pathToZipFileName).concat(". Please check the path provided")));
+        try (final Transaction tx = db.beginTx()) {
+            final Path inputPath = Paths.get(zipOrFolderName);
+            if (Files.notExists(inputPath)) {
+                // File/folder not found
+                MESSAGE_QUEUE.add(new OutputMessage(
+                        "Input file or folder not found at: " + inputPath +
+                                ". Please check the provided path"));
                 return MESSAGE_QUEUE.stream();
             }
 
-            parseZip(zipFile);
-            this.tx.commit();
+            if (Files.isDirectory(inputPath)) {
+                // Load CSV files from a path
+                loadFolder(tx, inputPath, csvFormat);
+            } else {
+                // Load CSV files from a Zip file
+                parseZip(tx, inputPath, csvFormat);
+            }
 
+            // Commit if we succeeded
+            tx.commit();
         } catch (IOException | Neo4jQueryException e) {
-            if (this.tx != null) this.tx.rollback();
             throw new ProcedureException(e);
-        } finally {
-            if (this.tx != null) this.tx.close();
         }
 
         MESSAGE_QUEUE.add(new OutputMessage(String.format("%d file(s) containing a label where found and processed.", countLabelCreated)));
@@ -375,20 +609,5 @@ public class Importer {
         MESSAGE_QUEUE.add(new OutputMessage(String.format("%d node(s) and %d relationship(s) were created during the import.", nodeCreated, relationshipCreated)));
 
         return MESSAGE_QUEUE.stream();
-    }
-
-    public Importer(GraphDatabaseService db, Log log) {
-        this.db = db;
-        this.log = log;
-
-        // Init members
-        this.countLabelCreated = 0L;
-        this.countRelationTypeCreated = 0L;
-        this.ignoredFile = 0L;
-        this.nodeCreated = 0L;
-        this.relationshipCreated = 0L;
-        this.idBindingMap = new HashMap<>();
-
-
     }
 }
